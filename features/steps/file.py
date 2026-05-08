@@ -6,6 +6,10 @@ import time
 
 def parse_human_size(size):
     """Parse file size string into bytes."""
+    # Handle special case of 0B
+    if size == "0B":
+        return 0
+
     # Extract size & unit
     count = int(size[0:-2])
     unit = size[-2:]
@@ -18,7 +22,7 @@ def parse_human_size(size):
         size_in_bytes = count * 1024 * 1024 * 1024
     else:
         raise Exception("Unknown unit")
-    
+
     return size_in_bytes
 
 def md5sum(filename, blocksize=65536):

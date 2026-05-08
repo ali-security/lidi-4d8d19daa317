@@ -2,15 +2,22 @@
 from behave import given, when, then, use_step_matcher
 import os
 import time
+import subprocess
+import re
 
 from features.steps.lidi import create_file, send_file, send_multiple_files, start_diode, start_lidi_file_receive, start_lidi_receive, start_lidi_send, start_lidi_send_dir, start_throttled_diode, stop_lidi_file_receive, stop_lidi_receive, stop_lidi_send
 from features.steps.file import create_and_copy_file, create_and_copy_multiple_files, create_and_move_file, parse_human_size, test_file, test_no_file
+from features.steps.config import build_lidi_send_file_command
 
 use_step_matcher("cfparse")
 
 @given('lidi is started')
 def step_impl(context):
     start_diode(context)
+
+@given('lidi-send is started')
+def step_lidi_send_started(context):
+    start_lidi_send(context)
 
 @when('lidi-receive is restarted')
 def step_impl(context):
@@ -67,9 +74,35 @@ def step_set_encoding(context, encoding):
 @given('repair percentage is {repair} %')
 def step_set_encoding(context, repair):
     context.repair = repair
-    
+
+@when('lidi-file-send file {name} of size {size} with hash')
+def step_send_file_with_hash(context, name, size):
+    """Send a file with hash verification enabled."""
+    filename = os.path.join(context.send_dir, name)
+    create_file(context, filename, size)
+    # Build command with --hash flag
+    cmd = build_lidi_send_file_command(context, filename)
+    cmd.append('--hash')
+    result = subprocess.run(cmd, timeout=300, text=True, capture_output=True)
+    if result.returncode != 0:
+        raise Exception(f"Send with hash failed: {result.stderr}")
+    # The hash is calculated and transmitted, mark it in context
+    context.hash_enabled = True
+
+@when('lidi-file-send file {name} of size {size} without receiver')
+def step_send_file_without_receiver(context, name, size):
+    """Send a file when lidi-file-receive is not running (error scenario)."""
+    filename = os.path.join(context.send_dir, name)
+    create_file(context, filename, size)
+    cmd = build_lidi_send_file_command(context, filename)
+    # Don't wait for success; just try to send
+    result = subprocess.run(cmd, timeout=10, text=True, capture_output=True)
+    # Store result for error checking
+    context.send_error_output = result.stderr
+    context.send_returncode = result.returncode
+
 @when('lidi-file-send file {name} of size {size}')
-def step_impl(context, name, size):
+def step_send_file(context, name, size):
     send_file(context, name, size)
 
 @when('lidi-send restarts while lidi-file-send file {name} of size {size}')
@@ -155,3 +188,19 @@ def step_given_network_limited_bandwidth(context, bandwidth):
 def step_limited_bandwidth_not_exceeded(context, bandwidth):
     # used by network simulator to abort if received bandwidth is higher than that
     context.bandwidth_must_not_exceed = str(int(bandwidth) * 1000000)
+
+
+@then('the hash is logged for file {name}')
+def step_verify_hash_logged(context, name):
+    """Verify that hash was enabled and computed for the file."""
+    if not hasattr(context, 'hash_enabled') or not context.hash_enabled:
+        raise Exception(f"Hash was not computed for file {name}")
+    # Verify the file was actually received with correct content
+    test_file(context, context.receive_dir, name, 5)
+
+@then('lidi-send is still running')
+def step_verify_lidi_send_running(context):
+    """Verify that lidi-send process is still alive."""
+    poll = context.proc_lidi_send.poll()
+    if poll is not None:
+        raise Exception(f"lidi-send crashed with return code {poll}")

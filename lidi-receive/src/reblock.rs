@@ -1,7 +1,7 @@
 //! Worker for grouping packets according to their block numbers to handle potential UDP packets
 //! reordering
 
-use std::{array, thread};
+use std::{array, mem};
 
 pub const WINDOW_WIDTH: u8 = u8::MAX / 2;
 
@@ -17,8 +17,9 @@ fn send_to_decode(
 ) -> Result<bool, crate::Error> {
     blocks[id as usize].ignore = true;
 
-    let packets = blocks[id as usize].packets.clone();
-    blocks[id as usize].packets.clear();
+    let nb_packets = blocks[id as usize].packets.len();
+    let packets = mem::replace(&mut blocks[id as usize].packets,
+                               Vec::with_capacity(nb_packets));
 
     to_decode.send(super::Reassembled::Block { id, packets })?;
 
@@ -147,7 +148,5 @@ pub fn start<ClientNew, ClientEnd>(
             reset = send_to_decode(&receiver.to_decode, cur_id, &mut blocks)?;
             cur_id = cur_id.wrapping_add(1);
         }
-
-        thread::yield_now();
     }
 }

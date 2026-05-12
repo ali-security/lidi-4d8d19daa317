@@ -21,16 +21,16 @@ use lidi_command_utils::config;
 use lidi_command_utils::tls;
 use lidi_protocol as protocol;
 use std::{
+    collections::{self, HashMap},
     fmt,
     io::{self, Write},
     net,
     os::fd::AsRawFd,
-    thread, time,
+    sync, thread, time,
 };
 
 mod client;
 mod clients;
-mod decode;
 mod dispatch;
 mod reblock;
 mod socket;
@@ -88,12 +88,6 @@ impl From<crossbeam_channel::SendError<Vec<raptorq::EncodingPacket>>> for Error 
     }
 }
 
-impl From<crossbeam_channel::SendError<Reassembled>> for Error {
-    fn from(_: crossbeam_channel::SendError<Reassembled>) -> Self {
-        Self::SendBlockPackets
-    }
-}
-
 impl From<crossbeam_channel::SendError<Option<protocol::Block>>> for Error {
     fn from(_: crossbeam_channel::SendError<Option<protocol::Block>>) -> Self {
         Self::SendBlock
@@ -143,14 +137,6 @@ impl From<tls::Error> for Error {
     fn from(e: tls::Error) -> Self {
         Self::Tls(e)
     }
-}
-
-enum Reassembled {
-    Error,
-    Block {
-        id: u8,
-        packets: Vec<raptorq::EncodingPacket>,
-    },
 }
 
 struct Config {
@@ -233,6 +219,8 @@ pub struct Receiver<ClientNew, ClientEnd> {
         protocol::ClientId,
         crossbeam_channel::Receiver<protocol::Block>,
     )>,
+    active_transfers:
+        sync::RwLock<HashMap<protocol::ClientId, crossbeam_channel::Sender<protocol::Block>>>,
     client_new: ClientNew,
     client_end: ClientEnd,
 }
@@ -274,6 +262,7 @@ where
             for_dispatch,
             to_clients,
             for_clients,
+            active_transfers: sync::RwLock::new(collections::HashMap::new()),
             client_new,
             client_end,
         })
@@ -352,21 +341,12 @@ where
         }
 
         for port in &self.config.ports {
-            let (to_decode, for_decode) = crossbeam_channel::unbounded();
             let (to_reblock, for_reblock) = crossbeam_channel::unbounded();
-
-            thread::Builder::new()
-                .name(format!("decode_{port}"))
-                .spawn_scoped(scope, move || {
-                    if let Err(e) = decode::start(self, &for_decode) {
-                        log::error!("fatal decode error: {e}");
-                    }
-                })?;
 
             thread::Builder::new()
                 .name(format!("reblock_{port}"))
                 .spawn_scoped(scope, move || {
-                    if let Err(e) = reblock::start(self, &for_reblock, &to_decode) {
+                    if let Err(e) = reblock::start(self, &for_reblock) {
                         log::error!("fatal reblock error: {e}");
                     }
                 })?;

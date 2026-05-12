@@ -16,7 +16,7 @@
 //!
 //! ```text
 //!
-//!  <- 2 bytes -> <- 2 bytes -> <-- 1 byte --> <-- 4 bytes -->
+//!  <- 2 bytes -> <- 4 bytes -> <-- 1 byte --> <-- 4 bytes -->
 //! --------------+-------------+--------------+---------------+--------------------------------------
 //! |             |             |              |               |                                     |
 //! |  client_id  |   seq_num   |  block_type  |  data_length  |  payload = data + optional padding  |
@@ -256,7 +256,7 @@ impl fmt::Display for EndpointId {
 }
 
 pub type ClientId = u16;
-pub type SequenceNumber = u16;
+pub type SequenceNumber = u32;
 
 type DataLen = u32;
 
@@ -331,8 +331,8 @@ impl Block {
     }
 
     #[must_use]
-    pub fn sequence_number(&self) -> ClientId {
-        let mut sequence_number = [0u8; size_of::<ClientId>()];
+    pub fn sequence_number(&self) -> SequenceNumber {
+        let mut sequence_number = [0u8; size_of::<SequenceNumber>()];
         sequence_number.copy_from_slice(
             &self.data
                 [SEQUENCE_NUMBER_OFFSET..SEQUENCE_NUMBER_OFFSET + size_of::<SequenceNumber>()],

@@ -23,6 +23,12 @@ where
             log::error!("client {client_id:x}: {e}");
         }
 
+        receiver
+            .active_transfers
+            .write()
+            .unwrap()
+            .remove(&client_id);
+
         thread::yield_now();
     }
 }

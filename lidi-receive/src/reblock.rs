@@ -1,6 +1,7 @@
 //! Worker for grouping packets according to their block numbers to handle potential UDP packets
 //! reordering
 
+use lidi_protocol as protocol;
 use std::{array, mem};
 
 pub const WINDOW_WIDTH: u8 = u8::MAX / 2;
@@ -10,8 +11,8 @@ struct Block {
     packets: Vec<raptorq::EncodingPacket>,
 }
 
-fn send_to_decode(
-    to_decode: &crossbeam_channel::Sender<super::Reassembled>,
+fn send_to_decode<ClientNew, ClientEnd>(
+    receiver: &crate::Receiver<ClientNew, ClientEnd>,
     id: u8,
     blocks: &mut [Block],
 ) -> Result<bool, crate::Error> {
@@ -23,7 +24,32 @@ fn send_to_decode(
         Vec::with_capacity(capacity),
     );
 
-    to_decode.send(super::Reassembled::Block { id, packets })?;
+    let nb_packets = packets.len();
+
+    log::debug!("received block {id} to decode ({nb_packets} packets)");
+
+    #[cfg(feature = "prometheus")]
+    #[allow(clippy::cast_precision_loss)]
+    metrics::histogram!("lidi_receive_decode_with_n_packets").record(packets.len() as f64);
+
+    match receiver.raptorq.decode(id, packets) {
+        None => {
+            #[cfg(feature = "prometheus")]
+            metrics::counter!("lidi_receive_blocks_decode_failed").increment(1);
+            log::error!("lost block {id} (failed to decode with {nb_packets} packets)");
+            receiver.to_dispatch.send(None)?;
+        }
+        Some(block) => {
+            log::trace!("block {id} decoded ({} bytes)", block.len());
+
+            #[cfg(feature = "prometheus")]
+            metrics::counter!("lidi_receive_blocks_decoded").increment(1);
+
+            receiver
+                .to_dispatch
+                .send(Some(protocol::Block::deserialize(block)))?;
+        }
+    }
 
     #[cfg(feature = "prometheus")]
     metrics::counter!("lidi_receive_blocks_reassembled").increment(1);
@@ -39,7 +65,8 @@ fn send_to_decode(
             #[cfg(feature = "prometheus")]
             metrics::counter!("lidi_receive_blocks_lost").increment(1);
             log::error!("lost block {opposite} (too far)");
-            to_decode.send(super::Reassembled::Error)?;
+            log::warn!("synchronization lost received, propagating");
+            receiver.to_dispatch.send(None)?;
             return Ok(true);
         }
     }
@@ -55,7 +82,6 @@ pub fn start<ClientNew, ClientEnd>(
     #[cfg(feature = "receive-mmsg")] for_reblock: &crossbeam_channel::Receiver<
         Vec<raptorq::EncodingPacket>,
     >,
-    to_decode: &crossbeam_channel::Sender<crate::Reassembled>,
 ) -> Result<(), crate::Error> {
     let min_nb_packets = usize::try_from(receiver.raptorq.min_nb_packets())
         .map_err(|e| crate::Error::Internal(format!("min_nb_packets: {e}")))?;
@@ -86,7 +112,7 @@ pub fn start<ClientNew, ClientEnd>(
                                     "block {cur_id} is incomplete ({nb_packets} packets) after reset timeout, forcibly send to decode"
                                 );
                             }
-                            let _ = send_to_decode(to_decode, cur_id, &mut blocks)?;
+                            let _ = send_to_decode(receiver, cur_id, &mut blocks)?;
                         }
                         cur_id = cur_id.wrapping_add(1);
                     }
@@ -147,12 +173,12 @@ pub fn start<ClientNew, ClientEnd>(
 
         if fast_track {
             log::warn!("probable network interrupt, fast track first block");
-            let _ = send_to_decode(to_decode, cur_id, &mut blocks)?;
+            let _ = send_to_decode(receiver, cur_id, &mut blocks)?;
             cur_id = cur_id.wrapping_add(1);
         }
 
         while blocks[cur_id as usize].packets.len() >= min_nb_packets {
-            reset = send_to_decode(to_decode, cur_id, &mut blocks)?;
+            reset = send_to_decode(receiver, cur_id, &mut blocks)?;
             cur_id = cur_id.wrapping_add(1);
         }
     }

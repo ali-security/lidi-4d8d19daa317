@@ -6,7 +6,6 @@ use std::{
     collections,
     io::{self, Write},
     os::fd::AsRawFd,
-    thread,
 };
 
 pub fn start<C, ClientNew, ClientEnd, E>(
@@ -43,7 +42,7 @@ where
         io::BufWriter::with_capacity(2 * protocol::Block::max_data_len(&receiver.raptorq), client);
 
     let mut expected_sequence_number = 1; // 0 is consumed by the Start
-    let mut parked: collections::HashMap<u16, protocol::Block> = collections::HashMap::new();
+    let mut parked = collections::HashMap::new();
     let mut transmitted = 0;
 
     #[cfg(feature = "hash")]
@@ -55,6 +54,9 @@ where
 
     loop {
         let block = if let Some(block) = parked.remove(&expected_sequence_number) {
+            if parked.len() < parked.capacity() / 2 {
+                parked.shrink_to_fit();
+            }
             block
         } else if let Some(timeout) = receiver.config.abort_timeout {
             recvq.recv_timeout(timeout).map_err(crate::Error::from)?
@@ -78,7 +80,11 @@ where
         let sequence_number = block.sequence_number();
 
         if sequence_number != expected_sequence_number {
-            parked.insert(sequence_number, block);
+            if parked.insert(sequence_number, block).is_some() {
+                return Err(crate::Error::Internal(format!(
+                    "duplicate sequence number {sequence_number}"
+                )));
+            }
             continue;
         }
 

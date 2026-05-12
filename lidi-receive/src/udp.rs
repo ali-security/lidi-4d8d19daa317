@@ -9,6 +9,12 @@ use std::{
 pub fn start<ClientNew, ClientEnd>(
     receiver: &crate::Receiver<ClientNew, ClientEnd>,
     port: u16,
+    #[cfg(not(feature = "receive-mmsg"))] to_reblock: &crossbeam_channel::Sender<
+        raptorq::EncodingPacket,
+    >,
+    #[cfg(feature = "receive-mmsg")] to_reblock: &crossbeam_channel::Sender<
+        Vec<raptorq::EncodingPacket>,
+    >,
 ) -> Result<(), crate::Error> {
     let addresses = (receiver.config.from.as_str(), 0)
         .to_socket_addrs()
@@ -68,13 +74,13 @@ pub fn start<ClientNew, ClientEnd>(
                 #[cfg(not(feature = "receive-mmsg"))]
                 receiver.to_reblock.send(packet)?;
                 #[cfg(feature = "receive-mmsg")]
-                receiver.to_reblock.send(vec![packet])?;
+                to_reblock.send(vec![packet])?;
             }
             #[cfg(feature = "receive-mmsg")]
             socket::ReceiveDatagrams::Multiple(datagrams) => {
                 #[cfg(feature = "prometheus")]
                 metrics::counter!("lidi_receive_udp_packets").increment(datagrams.len() as u64);
-                receiver.to_reblock.send(
+                to_reblock.send(
                     datagrams
                         .into_iter()
                         .map(raptorq::EncodingPacket::deserialize)

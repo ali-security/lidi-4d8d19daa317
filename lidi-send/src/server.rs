@@ -29,16 +29,12 @@ where
         if let Err(e) = client_res {
             log::error!("client {client_id:x}: error: {e}");
 
-            let block_id = sender
-                .next_block
-                .fetch_add(1, sync::atomic::Ordering::SeqCst);
-
             if let Err(e) = sender.to_udp.send(Some(protocol::Block::new(
                 sender.block_recycler.steal().success(),
-                block_id,
                 protocol::BlockType::Abort,
                 &sender.raptorq,
                 client_id,
+                0,
                 None,
             )?)) {
                 log::error!("client {client_id:x}: failed to abort : {e}");

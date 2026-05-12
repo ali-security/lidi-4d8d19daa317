@@ -3,6 +3,7 @@
 use lidi_command_utils::config;
 use lidi_protocol as protocol;
 use std::{
+    collections,
     io::{self, Write},
     os::fd::AsRawFd,
     thread,
@@ -41,6 +42,8 @@ where
     let mut client =
         io::BufWriter::with_capacity(protocol::Block::max_data_len(&receiver.raptorq), client);
 
+    let mut expected_sequence_number = 1; // 0 is consumed by the Start
+    let mut parked: collections::HashMap<u16, protocol::Block> = collections::HashMap::new();
     let mut transmitted = 0;
 
     #[cfg(feature = "hash")]
@@ -51,13 +54,33 @@ where
     };
 
     loop {
-        let block = if let Some(timeout) = receiver.config.abort_timeout {
+        let block = if let Some(block) = parked.remove(&expected_sequence_number) {
+            block
+        } else if let Some(timeout) = receiver.config.abort_timeout {
             recvq.recv_timeout(timeout).map_err(crate::Error::from)?
         } else {
             recvq.recv().map_err(crate::Error::from)?
         };
 
         let block_type = block.block_type()?;
+
+        if matches!(block_type, protocol::BlockType::Abort) {
+            log::warn!("client {client_id:x}: aborting transfer");
+            (receiver.client_end)(
+                client.into_inner().map_err(|e| {
+                    crate::Error::Internal(format!("failed to retrieve client inner: {e}"))
+                })?,
+                false,
+            );
+            return Ok(());
+        }
+
+        let sequence_number = block.sequence_number();
+
+        if sequence_number != expected_sequence_number {
+            parked.insert(sequence_number, block);
+            continue;
+        }
 
         let payload = block.payload();
 
@@ -77,46 +100,33 @@ where
             }
         }
 
-        match block_type {
-            protocol::BlockType::Abort => {
-                log::warn!("client {client_id:x}: aborting transfer");
-                (receiver.client_end)(
-                    client.into_inner().map_err(|e| {
-                        crate::Error::Internal(format!("failed to retrieve client inner: {e}"))
-                    })?,
-                    false,
+        if matches!(block_type, protocol::BlockType::End) {
+            #[cfg(feature = "hash")]
+            if let Some(hasher) = hasher {
+                let hash = hasher.finalize();
+                log::info!(
+                    "client {client_id:x}: finished transfer, {transmitted} bytes transmitted, hash is {hash:x}"
                 );
-                return Ok(());
-            }
-            protocol::BlockType::End => {
-                #[cfg(feature = "hash")]
-                if let Some(hasher) = hasher {
-                    let hash = hasher.finalize();
-                    log::info!(
-                        "client {client_id:x}: finished transfer, {transmitted} bytes transmitted, hash is {hash:x}"
-                    );
-                } else {
-                    log::info!(
-                        "client {client_id:x}: finished transfer, {transmitted} bytes transmitted"
-                    );
-                }
-
-                #[cfg(not(feature = "hash"))]
+            } else {
                 log::info!(
                     "client {client_id:x}: finished transfer, {transmitted} bytes transmitted"
                 );
-
-                client.flush()?;
-                (receiver.client_end)(
-                    client.into_inner().map_err(|e| {
-                        crate::Error::Internal(format!("failed to retrieve client inner: {e}"))
-                    })?,
-                    true,
-                );
-                return Ok(());
             }
-            _ => (),
+
+            #[cfg(not(feature = "hash"))]
+            log::info!("client {client_id:x}: finished transfer, {transmitted} bytes transmitted");
+
+            client.flush()?;
+            (receiver.client_end)(
+                client.into_inner().map_err(|e| {
+                    crate::Error::Internal(format!("failed to retrieve client inner: {e}"))
+                })?,
+                true,
+            );
+            return Ok(());
         }
+
+        expected_sequence_number = expected_sequence_number.wrapping_add(1);
 
         thread::yield_now();
     }

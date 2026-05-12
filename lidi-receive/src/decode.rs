@@ -5,9 +5,10 @@ use std::thread;
 
 pub fn start<ClientNew, ClientEnd>(
     receiver: &crate::Receiver<ClientNew, ClientEnd>,
+    for_decode: &crossbeam_channel::Receiver<crate::Reassembled>,
 ) -> Result<(), crate::Error> {
     loop {
-        match receiver.for_decode.recv()? {
+        match for_decode.recv()? {
             super::Reassembled::Block { id, packets } => {
                 let nb_packets = packets.len();
 
@@ -33,7 +34,7 @@ pub fn start<ClientNew, ClientEnd>(
 
                         receiver
                             .to_dispatch
-                            .send(Some(protocol::Block::deserialize(id, block)))?;
+                            .send(Some(protocol::Block::deserialize(block)))?;
                     }
                 }
             }

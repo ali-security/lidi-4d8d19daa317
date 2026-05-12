@@ -29,7 +29,7 @@ use std::{
     io::{self, Read},
     net,
     os::fd::AsRawFd,
-    sync, thread,
+    thread,
 };
 
 mod client;
@@ -163,7 +163,6 @@ impl From<&config::SendConfig> for Config {
 pub struct Sender<C> {
     config: Config,
     raptorq: protocol::RaptorQ,
-    next_block: sync::atomic::AtomicU8,
     block_recycler: crossbeam_deque::Injector<protocol::Block>,
     to_server:
         crossbeam_channel::Sender<Option<(protocol::EndpointId, config::EndpointOptions, C)>>,
@@ -199,14 +198,12 @@ where
 
         let block_recycler = crossbeam_deque::Injector::new();
 
-        let next_block = sync::atomic::AtomicU8::new(0);
         let (to_server, for_server) = crossbeam_channel::bounded(1);
         let (to_udp, for_udp) = crossbeam_channel::bounded(config.ports.len());
 
         Ok(Self {
             config,
             raptorq,
-            next_block,
             block_recycler,
             to_server,
             for_server,
@@ -233,7 +230,7 @@ where
 
         for port in &self.config.ports {
             thread::Builder::new()
-                .name(format!("udp_{port}"))
+                .name(format!("send_{port}"))
                 .spawn_scoped(scope, move || {
                     if let Err(e) = udp::start(self, *port) {
                         log::error!("fatal udp error: {e}");

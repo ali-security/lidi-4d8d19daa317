@@ -16,13 +16,13 @@
 //!
 //! ```text
 //!
-//! <-- 2 bytes -> <-- 1 byte --> <-- 4 bytes -->
-//! --------------+--------------+---------------+--------------------------------------
-//! |             |              |               |                                     |
-//! |  client_id  |  block_type  |  data_length  |  payload = data + optional padding  |
-//! |             |              |               |                                     |
-//! --------------+--------------+---------------+--------------------------------------
-//!  <----------- SERIALIZE_OVERHEAD -----------> <----------- block_length ----------->
+//!  <- 2 bytes -> <- 2 bytes -> <-- 1 byte --> <-- 4 bytes -->
+//! --------------+-------------+--------------+---------------+--------------------------------------
+//! |             |             |              |               |                                     |
+//! |  client_id  |   seq_num   |  block_type  |  data_length  |  payload = data + optional padding  |
+//! |             |             |              |               |                                     |
+//! --------------+-------------+--------------+---------------+--------------------------------------
+//!  <------------------ SERIALIZE_OVERHEAD ------------------> <----------- block_length ----------->
 //!
 //! ```
 //!
@@ -256,15 +256,17 @@ impl fmt::Display for EndpointId {
 }
 
 pub type ClientId = u16;
+pub type SequenceNumber = u16;
 
 type DataLen = u32;
 
-const BLOCK_TYPE_OFFSET: usize = size_of::<ClientId>();
+const CLIENT_ID_OFFSET: usize = 0;
+const SEQUENCE_NUMBER_OFFSET: usize = CLIENT_ID_OFFSET + size_of::<ClientId>();
+const BLOCK_TYPE_OFFSET: usize = SEQUENCE_NUMBER_OFFSET + size_of::<SequenceNumber>();
 const DATA_LEN_OFFSET: usize = BLOCK_TYPE_OFFSET + 1;
 const SERIALIZE_OVERHEAD: usize = DATA_LEN_OFFSET + size_of::<DataLen>();
 
 pub struct Block {
-    id: u8,
     data: Vec<u8>,
 }
 
@@ -279,22 +281,20 @@ impl Block {
     /// - if there is some `data`, its length must be lower than `Messsage::max_data_len()`.
     pub fn new(
         recycle: Option<Self>,
-        id: u8,
         block: BlockType,
         raptorq: &RaptorQ,
         client_id: ClientId,
+        sequence_number: SequenceNumber,
         data: Option<&[u8]>,
     ) -> Result<Self, Error> {
         let mut res = match recycle {
             Some(mut res) => {
                 const DATA_LEN: DataLen = 0;
-                res.id = id;
                 res.data[DATA_LEN_OFFSET..DATA_LEN_OFFSET + size_of::<DataLen>()]
                     .copy_from_slice(&DATA_LEN.to_le_bytes());
                 res
             }
             None => Self {
-                id,
                 data: vec![
                     0u8;
                     usize::try_from(raptorq.transfer_length)
@@ -302,7 +302,10 @@ impl Block {
                 ],
             },
         };
-        res.data[0..size_of::<ClientId>()].copy_from_slice(&client_id.to_le_bytes());
+        res.data[CLIENT_ID_OFFSET..CLIENT_ID_OFFSET + size_of::<ClientId>()]
+            .copy_from_slice(&client_id.to_le_bytes());
+        res.data[SEQUENCE_NUMBER_OFFSET..SEQUENCE_NUMBER_OFFSET + size_of::<SequenceNumber>()]
+            .copy_from_slice(&sequence_number.to_le_bytes());
         res.data[BLOCK_TYPE_OFFSET] = block.serialized();
 
         if let Some(data) = data {
@@ -321,8 +324,20 @@ impl Block {
     #[must_use]
     pub fn client_id(&self) -> ClientId {
         let mut client_id = [0u8; size_of::<ClientId>()];
-        client_id.copy_from_slice(&self.data[0..size_of::<ClientId>()]);
+        client_id.copy_from_slice(
+            &self.data[CLIENT_ID_OFFSET..CLIENT_ID_OFFSET + size_of::<ClientId>()],
+        );
         ClientId::from_le_bytes(client_id)
+    }
+
+    #[must_use]
+    pub fn sequence_number(&self) -> ClientId {
+        let mut sequence_number = [0u8; size_of::<ClientId>()];
+        sequence_number.copy_from_slice(
+            &self.data
+                [SEQUENCE_NUMBER_OFFSET..SEQUENCE_NUMBER_OFFSET + size_of::<SequenceNumber>()],
+        );
+        SequenceNumber::from_le_bytes(sequence_number)
     }
 
     pub fn block_type(&self) -> Result<BlockType, Error> {
@@ -347,18 +362,13 @@ impl Block {
     }
 
     #[must_use]
-    pub const fn deserialize(id: u8, data: Vec<u8>) -> Self {
-        Self { id, data }
+    pub const fn deserialize(data: Vec<u8>) -> Self {
+        Self { data }
     }
 
     #[must_use]
     pub const fn max_data_len(raptorq: &RaptorQ) -> usize {
         raptorq.transfer_length as usize - SERIALIZE_OVERHEAD
-    }
-
-    #[must_use]
-    pub const fn id(&self) -> u8 {
-        self.id
     }
 
     #[must_use]
@@ -381,10 +391,10 @@ impl fmt::Display for Block {
         };
         write!(
             fmt,
-            "client {:x} block = {} id = {} data = {} byte(s)",
+            "client {:x} block = {} seq_num = {} data = {} byte(s)",
             self.client_id(),
             msg_type,
-            self.id,
+            self.sequence_number(),
             self.payload_len()
         )
     }

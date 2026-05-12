@@ -2,7 +2,7 @@
 
 use lidi_command_utils::config;
 use lidi_protocol as protocol;
-use std::{io, os::fd::AsRawFd, sync};
+use std::{io, os::fd::AsRawFd};
 
 pub fn start<C>(
     sender: &crate::Sender<C>,
@@ -16,18 +16,18 @@ where
 {
     log::info!("client {client_id:x}: connected");
 
-    let block_id = sender
-        .next_block
-        .fetch_add(1, sync::atomic::Ordering::SeqCst);
+    let mut sequence_number = 0;
 
     sender.to_udp.send(Some(protocol::Block::new(
         sender.block_recycler.steal().success(),
-        block_id,
         protocol::BlockType::Start,
         &sender.raptorq,
         client_id,
+        sequence_number,
         Some(&endpoint_id.serialize()),
     )?))?;
+
+    sequence_number = sequence_number.wrapping_add(1);
 
     let mut buffer = vec![0; protocol::Block::max_data_len(&sender.raptorq)];
     let mut cursor = 0;
@@ -67,18 +67,16 @@ where
             hasher.update(&buffer[..cursor]);
         }
 
-        let block_id = sender
-            .next_block
-            .fetch_add(1, sync::atomic::Ordering::SeqCst);
-
         sender.to_udp.send(Some(protocol::Block::new(
             sender.block_recycler.steal().success(),
-            block_id,
             block_type,
             &sender.raptorq,
             client_id,
+            sequence_number,
             Some(&buffer[..cursor]),
         )?))?;
+
+        sequence_number = sequence_number.wrapping_add(1);
 
         transmitted += cursor;
         cursor = 0;

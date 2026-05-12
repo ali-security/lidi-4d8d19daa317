@@ -50,7 +50,7 @@ fn init_logger_simplelog(level_filter: log::LevelFilter, stderr_only: bool) -> R
     let config = simplelog::ConfigBuilder::new()
         .set_level_padding(simplelog::LevelPadding::Right)
         .set_target_level(simplelog::LevelFilter::Off)
-        .set_thread_level(level_filter)
+        .set_thread_level(log::LevelFilter::Info)
         .set_thread_mode(simplelog::ThreadLogMode::Names)
         .set_time_format_rfc2822()
         .set_time_offset_to_local()

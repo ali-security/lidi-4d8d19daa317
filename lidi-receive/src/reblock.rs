@@ -17,9 +17,11 @@ fn send_to_decode(
 ) -> Result<bool, crate::Error> {
     blocks[id as usize].ignore = true;
 
-    let nb_packets = blocks[id as usize].packets.len();
-    let packets = mem::replace(&mut blocks[id as usize].packets,
-                               Vec::with_capacity(nb_packets));
+    let capacity = blocks[id as usize].packets.capacity();
+    let packets = mem::replace(
+        &mut blocks[id as usize].packets,
+        Vec::with_capacity(capacity),
+    );
 
     to_decode.send(super::Reassembled::Block { id, packets })?;
 
@@ -47,6 +49,13 @@ fn send_to_decode(
 
 pub fn start<ClientNew, ClientEnd>(
     receiver: &crate::Receiver<ClientNew, ClientEnd>,
+    #[cfg(not(feature = "receive-mmsg"))] for_reblock: &crossbeam_channel::Receiver<
+        raptorq::EncodingPacket,
+    >,
+    #[cfg(feature = "receive-mmsg")] for_reblock: &crossbeam_channel::Receiver<
+        Vec<raptorq::EncodingPacket>,
+    >,
+    to_decode: &crossbeam_channel::Sender<crate::Reassembled>,
 ) -> Result<(), crate::Error> {
     let min_nb_packets = usize::try_from(receiver.raptorq.min_nb_packets())
         .map_err(|e| crate::Error::Internal(format!("min_nb_packets: {e}")))?;
@@ -63,10 +72,7 @@ pub fn start<ClientNew, ClientEnd>(
     let mut reset = true;
 
     loop {
-        let packets = match receiver
-            .for_reblock
-            .recv_timeout(receiver.config.reset_timeout)
-        {
+        let packets = match for_reblock.recv_timeout(receiver.config.reset_timeout) {
             Err(crossbeam_channel::RecvTimeoutError::Timeout) => {
                 if !reset {
                     reset = true;
@@ -80,7 +86,7 @@ pub fn start<ClientNew, ClientEnd>(
                                     "block {cur_id} is incomplete ({nb_packets} packets) after reset timeout, forcibly send to decode"
                                 );
                             }
-                            let _ = send_to_decode(&receiver.to_decode, cur_id, &mut blocks)?;
+                            let _ = send_to_decode(to_decode, cur_id, &mut blocks)?;
                         }
                         cur_id = cur_id.wrapping_add(1);
                     }
@@ -121,18 +127,19 @@ pub fn start<ClientNew, ClientEnd>(
 
         let mut fast_track = false;
 
+        let block_id_for_fast_track = cur_id.wrapping_add(WINDOW_WIDTH);
+
         for packet in packets {
             let id = packet.payload_id().source_block_number();
 
+            if id == block_id_for_fast_track {
+                fast_track = true;
+                blocks[id as usize].ignore = false;
+            }
+
             if blocks[id as usize].ignore {
-                if id == cur_id.wrapping_add(WINDOW_WIDTH) {
-                    fast_track = true;
-                    blocks[id as usize].ignore = false;
-                    blocks[id as usize].packets.push(packet);
-                } else {
-                    #[cfg(feature = "prometheus")]
-                    metrics::counter!("lidi_receive_packets_ignored").increment(1);
-                }
+                #[cfg(feature = "prometheus")]
+                metrics::counter!("lidi_receive_packets_ignored").increment(1);
             } else {
                 blocks[id as usize].packets.push(packet);
             }
@@ -140,12 +147,12 @@ pub fn start<ClientNew, ClientEnd>(
 
         if fast_track {
             log::warn!("probable network interrupt, fast track first block");
-            let _ = send_to_decode(&receiver.to_decode, cur_id, &mut blocks)?;
+            let _ = send_to_decode(to_decode, cur_id, &mut blocks)?;
             cur_id = cur_id.wrapping_add(1);
         }
 
         while blocks[cur_id as usize].packets.len() >= min_nb_packets {
-            reset = send_to_decode(&receiver.to_decode, cur_id, &mut blocks)?;
+            reset = send_to_decode(to_decode, cur_id, &mut blocks)?;
             cur_id = cur_id.wrapping_add(1);
         }
     }

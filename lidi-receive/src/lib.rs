@@ -221,16 +221,6 @@ impl From<&config::ReceiveConfig> for Config {
 pub struct Receiver<ClientNew, ClientEnd> {
     config: Config,
     raptorq: protocol::RaptorQ,
-    #[cfg(not(feature = "receive-mmsg"))]
-    to_reblock: crossbeam_channel::Sender<raptorq::EncodingPacket>,
-    #[cfg(not(feature = "receive-mmsg"))]
-    for_reblock: crossbeam_channel::Receiver<raptorq::EncodingPacket>,
-    #[cfg(feature = "receive-mmsg")]
-    to_reblock: crossbeam_channel::Sender<Vec<raptorq::EncodingPacket>>,
-    #[cfg(feature = "receive-mmsg")]
-    for_reblock: crossbeam_channel::Receiver<Vec<raptorq::EncodingPacket>>,
-    to_decode: crossbeam_channel::Sender<Reassembled>,
-    for_decode: crossbeam_channel::Receiver<Reassembled>,
     to_dispatch: crossbeam_channel::Sender<Option<protocol::Block>>,
     for_dispatch: crossbeam_channel::Receiver<Option<protocol::Block>>,
     to_clients: crossbeam_channel::Sender<(
@@ -262,8 +252,6 @@ where
         loop {
             thread::sleep(timer);
 
-            metrics::gauge!("lidi_receive_reblock_queue_len").set(self.for_reblock.len() as f64);
-            metrics::gauge!("lidi_receive_decode_queue_len").set(self.for_decode.len() as f64);
             metrics::gauge!("lidi_receive_dispatch_queue_len").set(self.for_dispatch.len() as f64);
         }
     }
@@ -276,18 +264,12 @@ where
     ) -> Result<Self, Error> {
         let config = Config::from(config);
 
-        let (to_reblock, for_reblock) = crossbeam_channel::unbounded();
-        let (to_decode, for_decode) = crossbeam_channel::unbounded();
         let (to_dispatch, for_dispatch) = crossbeam_channel::unbounded();
         let (to_clients, for_clients) = crossbeam_channel::unbounded();
 
         Ok(Self {
             config,
             raptorq,
-            to_reblock,
-            for_reblock,
-            to_decode,
-            for_decode,
             to_dispatch,
             for_dispatch,
             to_clients,
@@ -365,32 +347,35 @@ where
                 }
             })?;
 
-        thread::Builder::new()
-            .name(String::from("decode"))
-            .spawn_scoped(scope, move || {
-                if let Err(e) = decode::start(self) {
-                    log::error!("fatal decode error: {e}");
-                }
-            })?;
-
-        thread::Builder::new()
-            .name(String::from("reblock"))
-            .spawn_scoped(scope, move || {
-                if let Err(e) = reblock::start(self) {
-                    log::error!("fatal reblock error: {e}");
-                }
-            })?;
-
         if self.config.ports.is_empty() {
             return Err(Error::Internal(String::from("no ports configured")));
         }
 
         for port in &self.config.ports {
+            let (to_decode, for_decode) = crossbeam_channel::unbounded();
+            let (to_reblock, for_reblock) = crossbeam_channel::unbounded();
+
             thread::Builder::new()
-                .name(format!("udp_{port}"))
+                .name(format!("decode_{port}"))
                 .spawn_scoped(scope, move || {
-                    if let Err(e) = udp::start(self, *port) {
-                        log::error!("fatal udp_{port} error: {e}");
+                    if let Err(e) = decode::start(self, &for_decode) {
+                        log::error!("fatal decode error: {e}");
+                    }
+                })?;
+
+            thread::Builder::new()
+                .name(format!("reblock_{port}"))
+                .spawn_scoped(scope, move || {
+                    if let Err(e) = reblock::start(self, &for_reblock, &to_decode) {
+                        log::error!("fatal reblock error: {e}");
+                    }
+                })?;
+
+            thread::Builder::new()
+                .name(format!("recv_{port}"))
+                .spawn_scoped(scope, move || {
+                    if let Err(e) = udp::start(self, *port, &to_reblock) {
+                        log::error!("fatal recv_{port} error: {e}");
                     }
                 })?;
         }

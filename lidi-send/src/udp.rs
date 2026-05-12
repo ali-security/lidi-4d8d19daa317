@@ -56,12 +56,13 @@ pub fn start<C>(sender: &crate::Sender<C>, to_port: u16) -> Result<(), crate::Er
 
     let mut udp = socket::Send::new(socket, address, sender.config.mode)?;
 
+    let mut block_id = 0;
+
     loop {
         let Some(block) = sender.for_udp.recv()? else {
             return Ok(());
         };
 
-        let block_id = block.id();
         let client_id = block.client_id();
 
         log::trace!("encoding block {block_id} for client {client_id:x}");
@@ -80,5 +81,7 @@ pub fn start<C>(sender: &crate::Sender<C>, to_port: u16) -> Result<(), crate::Er
             #[cfg(feature = "prometheus")]
             metrics::counter!("lidi_send_udp_packets").increment(packets.len() as u64);
         }
+
+        block_id = block_id.wrapping_add(1);
     }
 }

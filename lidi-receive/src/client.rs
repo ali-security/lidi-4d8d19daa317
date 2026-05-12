@@ -40,7 +40,7 @@ where
 
     let client = (receiver.client_new)(endpoint, client_id).map_err(Into::into)?;
     let mut client =
-        io::BufWriter::with_capacity(protocol::Block::max_data_len(&receiver.raptorq), client);
+        io::BufWriter::with_capacity(2 * protocol::Block::max_data_len(&receiver.raptorq), client);
 
     let mut expected_sequence_number = 1; // 0 is consumed by the Start
     let mut parked: collections::HashMap<u16, protocol::Block> = collections::HashMap::new();
@@ -127,7 +127,5 @@ where
         }
 
         expected_sequence_number = expected_sequence_number.wrapping_add(1);
-
-        thread::yield_now();
     }
 }

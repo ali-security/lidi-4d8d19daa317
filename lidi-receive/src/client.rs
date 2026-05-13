@@ -2,14 +2,11 @@
 
 use lidi_command_utils::config;
 use lidi_protocol as protocol;
-use std::{
-    collections,
-    io::{self, Write},
-    os::fd::AsRawFd,
-};
+use std::{collections, io::Write, os::fd::AsRawFd};
 
 pub fn start<C, ClientNew, ClientEnd, E>(
     receiver: &crate::Receiver<ClientNew, ClientEnd>,
+    thread_number: u32,
     endpoint_id: protocol::EndpointId,
     client_id: protocol::ClientId,
     recvq: &crossbeam_channel::Receiver<protocol::Block>,
@@ -37,9 +34,7 @@ where
         log::warn!("hash was not enabled at compilation, ignoring this parameter");
     }
 
-    let client = (receiver.client_new)(endpoint, client_id).map_err(Into::into)?;
-    let mut client =
-        io::BufWriter::with_capacity(2 * protocol::Block::max_data_len(&receiver.raptorq), client);
+    let mut client = (receiver.client_new)(endpoint, client_id).map_err(Into::into)?;
 
     let mut expected_sequence_number = 1; // 0 is consumed by the Start
     let mut parked = collections::HashMap::new();
@@ -54,6 +49,10 @@ where
 
     loop {
         let block = if let Some(block) = parked.remove(&expected_sequence_number) {
+            #[cfg(feature = "prometheus")]
+            #[allow(clippy::cast_precision_loss)]
+            metrics::gauge!(format!("lidi_client_{thread_number}_parked_size"))
+                .set(parked.len() as f64);
             if parked.len() < parked.capacity() / 2 {
                 parked.shrink_to_fit();
             }
@@ -64,16 +63,15 @@ where
             recvq.recv().map_err(crate::Error::from)?
         };
 
+        #[cfg(feature = "prometheus")]
+        #[allow(clippy::cast_precision_loss)]
+        metrics::gauge!(format!("lidi_client_{thread_number}_queue_len")).set(recvq.len() as f64);
+
         let block_type = block.block_type()?;
 
         if matches!(block_type, protocol::BlockType::Abort) {
             log::warn!("client {client_id:x}: aborting transfer");
-            (receiver.client_end)(
-                client.into_inner().map_err(|e| {
-                    crate::Error::Internal(format!("failed to retrieve client inner: {e}"))
-                })?,
-                false,
-            );
+            (receiver.client_end)(client, false);
             return Ok(());
         }
 
@@ -123,12 +121,7 @@ where
             log::info!("client {client_id:x}: finished transfer, {transmitted} bytes transmitted");
 
             client.flush()?;
-            (receiver.client_end)(
-                client.into_inner().map_err(|e| {
-                    crate::Error::Internal(format!("failed to retrieve client inner: {e}"))
-                })?,
-                true,
-            );
+            (receiver.client_end)(client, true);
             return Ok(());
         }
 

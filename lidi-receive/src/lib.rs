@@ -322,7 +322,7 @@ where
             thread::Builder::new()
                 .name(format!("client_{i}"))
                 .spawn_scoped(scope, move || {
-                    if let Err(e) = clients::start(self) {
+                    if let Err(e) = clients::start(self, i) {
                         log::error!("fatal client_{i} error: {e}");
                     }
                 })?;

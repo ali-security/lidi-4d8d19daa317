@@ -7,6 +7,7 @@ use std::{io::Write, os::fd::AsRawFd, thread};
 
 pub fn start<C, ClientNew, ClientEnd, E>(
     receiver: &crate::Receiver<ClientNew, ClientEnd>,
+    thread_number: u32,
 ) -> Result<(), crate::Error>
 where
     C: Write + AsRawFd,
@@ -17,7 +18,7 @@ where
     loop {
         let (endpoint_id, client_id, recvq) = receiver.for_clients.recv()?;
 
-        let client_res = client::start(receiver, endpoint_id, client_id, &recvq);
+        let client_res = client::start(receiver, thread_number, endpoint_id, client_id, &recvq);
 
         if let Err(e) = client_res {
             log::error!("client {client_id:x}: {e}");

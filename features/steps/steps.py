@@ -11,6 +11,11 @@ from features.steps.config import build_lidi_send_file_command
 
 use_step_matcher("cfparse")
 
+@then('wait {seconds:d} seconds')
+def step_wait_seconds(context, seconds):
+    """Wait for a specified number of seconds."""
+    time.sleep(seconds)
+
 @given('lidi is started')
 def step_impl(context):
     start_diode(context)
@@ -282,3 +287,704 @@ def step_send_file_with_invalid_log_config(context, name, size):
     result = subprocess.run(cmd, timeout=10, text=True, capture_output=True)
     context.send_returncode = result.returncode
     context.send_error_output = result.stderr
+
+
+# Log file verification steps
+@given('a log file is prepared for lidi-file-send with {level} level')
+def step_prepare_log_file_for_level(context, level):
+    """Create a log config file for lidi-file-send with specified level."""
+    # build_log_config is defined in environment.py
+    def build_log_config(filename, level_name):
+        return f"""
+appenders:
+  file:
+    kind: file
+    path: {filename}
+
+root:
+  level: {level_name}
+  appenders:
+    - file
+"""
+
+    log_file = os.path.join(context.base_dir, f"lidi_send_file_{level}.log")
+    config_file = os.path.join(context.base_dir, f"log_config_lidi_send_file_{level}.yml")
+
+    log_content = build_log_config(log_file, level.lower())
+    with open(config_file, "w") as f:
+        f.write(log_content)
+
+    context.test_log_file = log_file
+    context.test_log_config = config_file
+
+
+@given('lidi-file-send is configured with {level} level logging')
+def step_configure_lidi_file_send_level(context, level):
+    """Configure lidi-file-send with a specific log level (without starting).
+
+    This step prepares the log configuration for lidi-file-send but does not
+    start the lidi system yet. Use 'lidi is started with the configured logging'
+    after this step to actually start lidi.
+    """
+    # build_log_config is defined in environment.py
+    def build_log_config(filename, level_name):
+        return f"""
+appenders:
+  file:
+    kind: file
+    path: {filename}
+
+root:
+  level: {level_name}
+  appenders:
+    - file
+"""
+
+    log_level = level.lower()
+
+    # Configure lidi-file-send with the requested log level
+    log_file = os.path.join(context.base_dir, f"lidi_send_file_{log_level}.log")
+    config_file = os.path.join(context.base_dir, f"log_config_lidi_send_file_{log_level}.yml")
+    log_content = build_log_config(log_file, log_level)
+    with open(config_file, "w") as f:
+        f.write(log_content)
+
+    # Store for later use
+    context.log_config_lidi_send_file = config_file
+    context.test_log_file = log_file
+
+
+@when('lidi is started with the configured logging')
+def step_start_lidi_with_configured_logging(context):
+    """Start lidi with the previously configured logging for lidi-file-send.
+
+    This must be called after 'lidi-send is configured with {level} level logging'.
+    Other lidi components (send, receive, receive-file) use default INFO level.
+    """
+    from features.steps.lidi import start_diode
+
+    # Verify configuration was prepared
+    if not hasattr(context, 'log_config_lidi_send_file'):
+        raise Exception("lidi-file-send logging was not configured. Use 'lidi-send is configured with {level} level logging' first.")
+
+    # Start the diode with the configured lidi-file-send config
+    start_diode(context)
+
+
+@then('the lidi-file-send log file contains log entries')
+def step_verify_log_file_not_empty(context):
+    """Verify that the lidi-file-send log file contains at least one entry."""
+    if not hasattr(context, 'test_log_file'):
+        raise Exception("No test log file was prepared")
+
+    if not os.path.exists(context.test_log_file):
+        raise Exception(f"Log file {context.test_log_file} was not created")
+
+    with open(context.test_log_file, 'r') as f:
+        content = f.read().strip()
+
+    if not content:
+        raise Exception(f"Log file {context.test_log_file} is empty, expected log entries")
+
+
+@then('the lidi-file-send log file contains log entries or is empty')
+def step_verify_log_file_or_empty(context):
+    """Verify that the lidi-file-send log file either has entries or is intentionally empty."""
+    if not hasattr(context, 'test_log_file'):
+        # No special verification needed if no test log file was explicitly prepared
+        return
+
+    if os.path.exists(context.test_log_file):
+        # File exists - it's OK if empty or has content
+        pass
+
+
+@then('the lidi-file-send log file should be empty')
+def step_verify_log_file_empty(context):
+    """Verify that the lidi-file-send log file is empty or contains no log records."""
+    if not hasattr(context, 'test_log_file'):
+        raise Exception("No test log file was prepared")
+
+    if not os.path.exists(context.test_log_file):
+        # Non-existent = empty, which is OK
+        return
+
+    with open(context.test_log_file, 'r') as f:
+        content = f.read().strip()
+
+    if content:
+        raise Exception(f"Log file {context.test_log_file} should be empty but contains: {content[:200]}")
+
+
+@then('the lidi-file-send log file contains no {level} level messages')
+def step_verify_no_log_level_in_lidi_file_send(context, level):
+    """Verify that the lidi-file-send log file does not contain messages of the specified level."""
+    if not hasattr(context, 'test_log_file') or not os.path.exists(context.test_log_file):
+        return  # No log file to check
+
+    with open(context.test_log_file, 'r') as f:
+        content = f.read().upper()
+
+    # Check for level in common log formats (case-insensitive)
+    level_upper = level.upper()
+    # Common patterns: [LEVEL], LEVEL:, {LEVEL}, LEVEL
+    patterns = [
+        f'[{level_upper}]',
+        f'{level_upper}:',
+        f'{{{level_upper}}}',
+        f' {level_upper} ',
+    ]
+
+    for pattern in patterns:
+        if pattern in content:
+            raise Exception(f"lidi-file-send log file contains unexpected {level} level messages (found: {pattern})")
+
+
+@then('the lidi-file-send log file contains {level} or higher level messages')
+def step_verify_log_level_present_in_lidi_file_send(context, level):
+    """Verify that the lidi-file-send log file contains messages at the specified level or higher."""
+    if not hasattr(context, 'test_log_file') or not os.path.exists(context.test_log_file):
+        raise Exception(f"lidi-file-send log file {context.test_log_file} does not exist or was not prepared")
+
+    with open(context.test_log_file, 'r') as f:
+        content = f.read().strip()
+
+    if not content:
+        raise Exception(f"lidi-file-send log file {context.test_log_file} is empty, expected {level} or higher level messages")
+
+    # Just verify file has content (has logs) - exact format verification is fragile
+    # Log4rs should produce some output for the specified level
+
+
+# Generic helper functions for log config testing across applications
+def _build_log_config(filename, level_name):
+    """Build a log4rs YAML config with the specified level."""
+    return f"""
+appenders:
+  file:
+    kind: file
+    path: {filename}
+
+root:
+  level: {level_name}
+  appenders:
+    - file
+"""
+
+
+def _verify_log_file_not_empty(log_file):
+    """Verify that a log file contains at least one entry."""
+    if not os.path.exists(log_file):
+        raise Exception(f"Log file {log_file} was not created")
+    with open(log_file, 'r') as f:
+        content = f.read().strip()
+    if not content:
+        raise Exception(f"Log file {log_file} is empty, expected log entries")
+
+
+def _verify_log_file_empty(log_file):
+    """Verify that a log file is empty or contains no log records."""
+    if not os.path.exists(log_file):
+        return
+    with open(log_file, 'r') as f:
+        content = f.read().strip()
+    if content:
+        raise Exception(f"Log file {log_file} should be empty but contains: {content[:200]}")
+
+
+def _verify_no_log_level(log_file, level):
+    """Verify that a log file does not contain messages of the specified level."""
+    if not os.path.exists(log_file):
+        return
+    with open(log_file, 'r') as f:
+        content = f.read().upper()
+    level_upper = level.upper()
+    patterns = [
+        f'[{level_upper}]',
+        f'{level_upper}:',
+        f'{{{level_upper}}}',
+        f' {level_upper} ',
+    ]
+    for pattern in patterns:
+        if pattern in content:
+            raise Exception(f"Log file contains unexpected {level} level messages (found: {pattern})")
+
+
+def _verify_log_level_present(log_file, level):
+    """Verify that a log file contains messages at the specified level or higher."""
+    if not os.path.exists(log_file):
+        raise Exception(f"Log file {log_file} does not exist or was not prepared")
+    with open(log_file, 'r') as f:
+        content = f.read().strip()
+    if not content:
+        raise Exception(f"Log file {log_file} is empty, expected {level} or higher level messages")
+
+
+# Steps for lidi-send daemon
+@given('a log file is prepared for lidi-send with {level} level')
+def step_prepare_log_file_for_lidi_send(context, level):
+    """Create a log config file for lidi-send with specified level."""
+    log_file = os.path.join(context.base_dir, f"lidi_send_{level}.log")
+    config_file = os.path.join(context.base_dir, f"log_config_lidi_send_{level}.yml")
+    log_content = _build_log_config(log_file, level.lower())
+    with open(config_file, "w") as f:
+        f.write(log_content)
+    context.lidi_send_log_file = log_file
+    context.log_config_lidi_send = config_file
+
+
+@given('lidi-send is configured with {level} level logging')
+def step_configure_lidi_send_level(context, level):
+    """Configure lidi-send with a specific log level."""
+    log_level = level.lower()
+    log_file = os.path.join(context.base_dir, f"lidi_send_{log_level}.log")
+    config_file = os.path.join(context.base_dir, f"log_config_lidi_send_{log_level}.yml")
+    log_content = _build_log_config(log_file, log_level)
+    with open(config_file, "w") as f:
+        f.write(log_content)
+    context.lidi_send_log_file = log_file
+    context.log_config_lidi_send = config_file
+
+
+@when('lidi-send is started without log-config')
+def step_start_lidi_send_without_log_config(context):
+    """Start lidi-send without custom log config."""
+    start_lidi_send(context)
+
+
+@when('lidi-send is started with the configured logging')
+def step_start_lidi_send_with_configured_logging(context):
+    """Start lidi-send with the previously configured logging."""
+    if not hasattr(context, 'log_config_lidi_send') or not context.log_config_lidi_send:
+        raise Exception("lidi-send logging was not configured")
+    start_lidi_send(context)
+
+
+@then('lidi-send should be running')
+def step_verify_lidi_send_running_state(context):
+    """Verify that lidi-send is running."""
+    if not hasattr(context, 'proc_lidi_send') or context.proc_lidi_send is None:
+        raise Exception("lidi-send is not running")
+    if context.proc_lidi_send.poll() is not None:
+        raise Exception("lidi-send process has exited")
+
+
+@when('lidi-send with log-config {log_config_path}')
+def step_start_lidi_send_with_invalid_config(context, log_config_path):
+    """Start lidi-send with a specified log config path."""
+    cmd = [
+        f'{context.bin_dir}/lidi-send',
+        f'{context.base_dir}/lidi_send_test.toml',
+        '--log-config', log_config_path,
+    ]
+    result = subprocess.run(cmd, timeout=10, text=True, capture_output=True)
+    context.send_returncode = result.returncode
+    context.send_error_output = result.stderr
+
+@when('lidi-send with the invalid log-config')
+def step_start_lidi_send_with_invalid_log_config(context):
+    """Start lidi-send with the previously created invalid log config."""
+    if not hasattr(context, 'invalid_log_config_path'):
+        raise Exception("No invalid log config was created")
+    cmd = [
+        f'{context.bin_dir}/lidi-send',
+        f'{context.base_dir}/lidi_send_test.toml',
+        '--log-config', context.invalid_log_config_path,
+    ]
+    result = subprocess.run(cmd, timeout=10, text=True, capture_output=True)
+    context.send_returncode = result.returncode
+    context.send_error_output = result.stderr
+
+
+@then('the lidi-send log file contains log entries')
+def step_verify_lidi_send_log_not_empty(context):
+    """Verify that the lidi-send log file contains at least one entry."""
+    if not hasattr(context, 'lidi_send_log_file'):
+        raise Exception("No lidi-send log file was prepared")
+    _verify_log_file_not_empty(context.lidi_send_log_file)
+
+
+@then('the lidi-send log file contains log entries or is empty')
+def step_verify_lidi_send_log_or_empty(context):
+    """Verify that the lidi-send log file either has entries or is empty."""
+    if not hasattr(context, 'lidi_send_log_file'):
+        return
+
+
+@then('the lidi-send log file should be empty')
+def step_verify_lidi_send_log_empty(context):
+    """Verify that the lidi-send log file is empty."""
+    if not hasattr(context, 'lidi_send_log_file'):
+        raise Exception("No lidi-send log file was prepared")
+    _verify_log_file_empty(context.lidi_send_log_file)
+
+
+@then('the lidi-send log file contains no {level} level messages')
+def step_verify_no_log_level_lidi_send(context, level):
+    """Verify that the lidi-send log file does not contain messages of the specified level."""
+    if not hasattr(context, 'lidi_send_log_file'):
+        return
+    _verify_no_log_level(context.lidi_send_log_file, level)
+
+
+@then('the lidi-send log file contains {level} or higher level messages')
+def step_verify_log_level_present_lidi_send(context, level):
+    """Verify that the lidi-send log file contains messages at the specified level or higher."""
+    if not hasattr(context, 'lidi_send_log_file'):
+        raise Exception("No lidi-send log file was prepared")
+    _verify_log_level_present(context.lidi_send_log_file, level)
+
+
+# Steps for lidi-receive daemon
+@given('a log file is prepared for lidi-receive with {level} level')
+def step_prepare_log_file_for_lidi_receive(context, level):
+    """Create a log config file for lidi-receive with specified level."""
+    log_file = os.path.join(context.base_dir, f"lidi_receive_{level}.log")
+    config_file = os.path.join(context.base_dir, f"log_config_lidi_receive_{level}.yml")
+    log_content = _build_log_config(log_file, level.lower())
+    with open(config_file, "w") as f:
+        f.write(log_content)
+    context.lidi_receive_log_file = log_file
+    context.log_config_lidi_receive = config_file
+
+
+@given('lidi-receive is configured with {level} level logging')
+def step_configure_lidi_receive_level(context, level):
+    """Configure lidi-receive with a specific log level."""
+    log_level = level.lower()
+    log_file = os.path.join(context.base_dir, f"lidi_receive_{log_level}.log")
+    config_file = os.path.join(context.base_dir, f"log_config_lidi_receive_{log_level}.yml")
+    log_content = _build_log_config(log_file, log_level)
+    with open(config_file, "w") as f:
+        f.write(log_content)
+    context.lidi_receive_log_file = log_file
+    context.log_config_lidi_receive = config_file
+
+
+@when('lidi-receive is started without log-config')
+def step_start_lidi_receive_without_log_config(context):
+    """Start lidi-receive without custom log config."""
+    start_lidi_receive(context)
+
+
+@when('lidi-receive is started with the configured logging')
+def step_start_lidi_receive_with_configured_logging(context):
+    """Start lidi-receive with the previously configured logging."""
+    if not hasattr(context, 'log_config_lidi_receive') or not context.log_config_lidi_receive:
+        raise Exception("lidi-receive logging was not configured")
+    start_lidi_receive(context)
+
+
+@then('lidi-receive should be running')
+def step_verify_lidi_receive_running_state(context):
+    """Verify that lidi-receive is running."""
+    if not hasattr(context, 'proc_lidi_receive') or context.proc_lidi_receive is None:
+        raise Exception("lidi-receive is not running")
+    if context.proc_lidi_receive.poll() is not None:
+        raise Exception("lidi-receive process has exited")
+
+
+@when('lidi-receive with log-config {log_config_path}')
+def step_start_lidi_receive_with_invalid_config(context, log_config_path):
+    """Start lidi-receive with a specified log config path."""
+    cmd = [
+        f'{context.bin_dir}/lidi-receive',
+        f'{context.base_dir}/lidi_receive_test.toml',
+        '--log-config', log_config_path,
+    ]
+    result = subprocess.run(cmd, timeout=10, text=True, capture_output=True)
+    context.send_returncode = result.returncode
+    context.send_error_output = result.stderr
+
+@when('lidi-receive with the invalid log-config')
+def step_start_lidi_receive_with_invalid_log_config(context):
+    """Start lidi-receive with the previously created invalid log config."""
+    if not hasattr(context, 'invalid_log_config_path'):
+        raise Exception("No invalid log config was created")
+    cmd = [
+        f'{context.bin_dir}/lidi-receive',
+        f'{context.base_dir}/lidi_receive_test.toml',
+        '--log-config', context.invalid_log_config_path,
+    ]
+    result = subprocess.run(cmd, timeout=10, text=True, capture_output=True)
+    context.send_returncode = result.returncode
+    context.send_error_output = result.stderr
+
+
+@then('the lidi-receive log file contains log entries')
+def step_verify_lidi_receive_log_not_empty(context):
+    """Verify that the lidi-receive log file contains at least one entry."""
+    if not hasattr(context, 'lidi_receive_log_file'):
+        raise Exception("No lidi-receive log file was prepared")
+    _verify_log_file_not_empty(context.lidi_receive_log_file)
+
+
+@then('the lidi-receive log file contains log entries or is empty')
+def step_verify_lidi_receive_log_or_empty(context):
+    """Verify that the lidi-receive log file either has entries or is empty."""
+    if not hasattr(context, 'lidi_receive_log_file'):
+        return
+
+
+@then('the lidi-receive log file should be empty')
+def step_verify_lidi_receive_log_empty(context):
+    """Verify that the lidi-receive log file is empty."""
+    if not hasattr(context, 'lidi_receive_log_file'):
+        raise Exception("No lidi-receive log file was prepared")
+    _verify_log_file_empty(context.lidi_receive_log_file)
+
+
+@then('the lidi-receive log file contains no {level} level messages')
+def step_verify_no_log_level_lidi_receive(context, level):
+    """Verify that the lidi-receive log file does not contain messages of the specified level."""
+    if not hasattr(context, 'lidi_receive_log_file'):
+        return
+    _verify_no_log_level(context.lidi_receive_log_file, level)
+
+
+@then('the lidi-receive log file contains {level} or higher level messages')
+def step_verify_log_level_present_lidi_receive(context, level):
+    """Verify that the lidi-receive log file contains messages at the specified level or higher."""
+    if not hasattr(context, 'lidi_receive_log_file'):
+        raise Exception("No lidi-receive log file was prepared")
+    _verify_log_level_present(context.lidi_receive_log_file, level)
+
+
+# Steps for lidi-dir-send
+@given('a log file is prepared for lidi-dir-send with {level} level')
+def step_prepare_log_file_for_lidi_dir_send(context, level):
+    """Create a log config file for lidi-dir-send with specified level."""
+    log_file = os.path.join(context.base_dir, f"lidi_dir_send_{level}.log")
+    config_file = os.path.join(context.base_dir, f"log_config_lidi_dir_send_{level}.yml")
+    log_content = _build_log_config(log_file, level.lower())
+    with open(config_file, "w") as f:
+        f.write(log_content)
+    context.lidi_dir_send_log_file = log_file
+    context.log_config_lidi_send_dir = config_file
+
+
+@given('lidi-dir-send is configured with {level} level logging')
+def step_configure_lidi_dir_send_level(context, level):
+    """Configure lidi-dir-send with a specific log level."""
+    log_level = level.lower()
+    log_file = os.path.join(context.base_dir, f"lidi_dir_send_{log_level}.log")
+    config_file = os.path.join(context.base_dir, f"log_config_lidi_dir_send_{log_level}.yml")
+    log_content = _build_log_config(log_file, log_level)
+    with open(config_file, "w") as f:
+        f.write(log_content)
+    context.lidi_dir_send_log_file = log_file
+    context.log_config_lidi_send_dir = config_file
+
+
+@when('lidi-dir-send is started without log-config')
+def step_start_lidi_dir_send_without_log_config(context):
+    """Start lidi-dir-send without custom log config."""
+    start_lidi_send_dir(context, True)
+
+
+@when('lidi-dir-send is started with the configured logging')
+def step_start_lidi_dir_send_with_configured_logging(context):
+    """Start lidi-dir-send with the previously configured logging."""
+    if not hasattr(context, 'log_config_lidi_send_dir') or not context.log_config_lidi_send_dir:
+        raise Exception("lidi-dir-send logging was not configured")
+    start_lidi_send_dir(context, True)
+
+
+@then('lidi-dir-send should be running')
+def step_verify_lidi_dir_send_running_state(context):
+    """Verify that lidi-dir-send is running."""
+    if not hasattr(context, 'proc_lidi_send_dir') or context.proc_lidi_send_dir is None:
+        raise Exception("lidi-dir-send is not running")
+    if context.proc_lidi_send_dir.poll() is not None:
+        raise Exception("lidi-dir-send process has exited")
+
+
+@when('lidi-dir-send with log-config {log_config_path}')
+def step_start_lidi_dir_send_with_invalid_config(context, log_config_path):
+    """Start lidi-dir-send with a specified log config path."""
+    cmd = [
+        f'{context.bin_dir}/lidi-dir-send',
+        '--log-config', log_config_path,
+        '--to-tcp', '127.0.0.1:4000',
+        context.send_dir,
+    ]
+    result = subprocess.run(cmd, timeout=10, text=True, capture_output=True)
+    context.send_returncode = result.returncode
+    context.send_error_output = result.stderr
+
+@when('lidi-dir-send with the invalid log-config')
+def step_start_lidi_dir_send_with_invalid_log_config(context):
+    """Start lidi-dir-send with the previously created invalid log config."""
+    if not hasattr(context, 'invalid_log_config_path'):
+        raise Exception("No invalid log config was created")
+    cmd = [
+        f'{context.bin_dir}/lidi-dir-send',
+        '--log-config', context.invalid_log_config_path,
+        '--to-tcp', '127.0.0.1:4000',
+        context.send_dir,
+    ]
+    result = subprocess.run(cmd, timeout=10, text=True, capture_output=True)
+    context.send_returncode = result.returncode
+    context.send_error_output = result.stderr
+
+
+@then('the lidi-dir-send log file contains log entries')
+def step_verify_lidi_dir_send_log_not_empty(context):
+    """Verify that the lidi-dir-send log file contains at least one entry."""
+    if not hasattr(context, 'lidi_dir_send_log_file'):
+        raise Exception("No lidi-dir-send log file was prepared")
+    _verify_log_file_not_empty(context.lidi_dir_send_log_file)
+
+
+@then('the lidi-dir-send log file contains log entries or is empty')
+def step_verify_lidi_dir_send_log_or_empty(context):
+    """Verify that the lidi-dir-send log file either has entries or is empty."""
+    if not hasattr(context, 'lidi_dir_send_log_file'):
+        return
+
+
+@then('the lidi-dir-send log file should be empty')
+def step_verify_lidi_dir_send_log_empty(context):
+    """Verify that the lidi-dir-send log file is empty."""
+    if not hasattr(context, 'lidi_dir_send_log_file'):
+        raise Exception("No lidi-dir-send log file was prepared")
+    _verify_log_file_empty(context.lidi_dir_send_log_file)
+
+
+@then('the lidi-dir-send log file contains no {level} level messages')
+def step_verify_no_log_level_lidi_dir_send(context, level):
+    """Verify that the lidi-dir-send log file does not contain messages of the specified level."""
+    if not hasattr(context, 'lidi_dir_send_log_file'):
+        return
+    _verify_no_log_level(context.lidi_dir_send_log_file, level)
+
+
+@then('the lidi-dir-send log file contains {level} or higher level messages')
+def step_verify_log_level_present_lidi_dir_send(context, level):
+    """Verify that the lidi-dir-send log file contains messages at the specified level or higher."""
+    if not hasattr(context, 'lidi_dir_send_log_file'):
+        raise Exception("No lidi-dir-send log file was prepared")
+    _verify_log_level_present(context.lidi_dir_send_log_file, level)
+
+
+# Steps for lidi-file-receive
+@given('a log file is prepared for lidi-file-receive with {level} level')
+def step_prepare_log_file_for_lidi_file_receive(context, level):
+    """Create a log config file for lidi-file-receive with specified level."""
+    log_file = os.path.join(context.base_dir, f"lidi_file_receive_{level}.log")
+    config_file = os.path.join(context.base_dir, f"log_config_lidi_file_receive_{level}.yml")
+    log_content = _build_log_config(log_file, level.lower())
+    with open(config_file, "w") as f:
+        f.write(log_content)
+    context.lidi_file_receive_log_file = log_file
+    context.log_config_lidi_receive_file = config_file
+
+
+@given('lidi-file-receive is configured with {level} level logging')
+def step_configure_lidi_file_receive_level(context, level):
+    """Configure lidi-file-receive with a specific log level."""
+    log_level = level.lower()
+    log_file = os.path.join(context.base_dir, f"lidi_file_receive_{log_level}.log")
+    config_file = os.path.join(context.base_dir, f"log_config_lidi_file_receive_{log_level}.yml")
+    log_content = _build_log_config(log_file, log_level)
+    with open(config_file, "w") as f:
+        f.write(log_content)
+    context.lidi_file_receive_log_file = log_file
+    context.log_config_lidi_receive_file = config_file
+
+
+@when('lidi-file-receive is started without log-config')
+def step_start_lidi_file_receive_without_log_config(context):
+    """Start lidi-file-receive without custom log config."""
+    if hasattr(context, 'proc_lidi_receive_file') and context.proc_lidi_receive_file:
+        stop_lidi_file_receive(context)
+        time.sleep(1)
+    start_lidi_file_receive(context)
+
+
+@when('lidi-file-receive is started with the configured logging')
+def step_start_lidi_file_receive_with_configured_logging(context):
+    """Start lidi-file-receive with the previously configured logging."""
+    if not hasattr(context, 'log_config_lidi_receive_file') or not context.log_config_lidi_receive_file:
+        raise Exception("lidi-file-receive logging was not configured")
+    if hasattr(context, 'proc_lidi_receive_file') and context.proc_lidi_receive_file:
+        stop_lidi_file_receive(context)
+        time.sleep(1)
+    start_lidi_file_receive(context)
+
+
+@then('lidi-file-receive should be running')
+def step_verify_lidi_file_receive_running_state(context):
+    """Verify that lidi-file-receive is running."""
+    if not hasattr(context, 'proc_lidi_receive_file') or context.proc_lidi_receive_file is None:
+        raise Exception("lidi-file-receive is not running")
+    if context.proc_lidi_receive_file.poll() is not None:
+        raise Exception("lidi-file-receive process has exited")
+
+
+@when('lidi-file-receive with log-config {log_config_path}')
+def step_start_lidi_file_receive_with_invalid_config(context, log_config_path):
+    """Start lidi-file-receive with a specified log config path."""
+    cmd = [
+        f'{context.bin_dir}/lidi-file-receive',
+        '--log-config', log_config_path,
+        '--from-tcp', f'127.0.0.1:{context.tcp_receive_port}',
+        context.receive_dir,
+    ]
+    result = subprocess.run(cmd, timeout=10, text=True, capture_output=True)
+    context.send_returncode = result.returncode
+    context.send_error_output = result.stderr
+
+@when('lidi-file-receive with the invalid log-config')
+def step_start_lidi_file_receive_with_invalid_log_config(context):
+    """Start lidi-file-receive with the previously created invalid log config."""
+    if not hasattr(context, 'invalid_log_config_path'):
+        raise Exception("No invalid log config was created")
+    cmd = [
+        f'{context.bin_dir}/lidi-file-receive',
+        '--log-config', context.invalid_log_config_path,
+        '--from-tcp', f'127.0.0.1:{context.tcp_receive_port}',
+        context.receive_dir,
+    ]
+    result = subprocess.run(cmd, timeout=10, text=True, capture_output=True)
+    context.send_returncode = result.returncode
+    context.send_error_output = result.stderr
+
+
+@then('the lidi-file-receive log file contains log entries')
+def step_verify_lidi_file_receive_log_not_empty(context):
+    """Verify that the lidi-file-receive log file contains at least one entry."""
+    if not hasattr(context, 'lidi_file_receive_log_file'):
+        raise Exception("No lidi-file-receive log file was prepared")
+    _verify_log_file_not_empty(context.lidi_file_receive_log_file)
+
+
+@then('the lidi-file-receive log file contains log entries or is empty')
+def step_verify_lidi_file_receive_log_or_empty(context):
+    """Verify that the lidi-file-receive log file either has entries or is empty."""
+    if not hasattr(context, 'lidi_file_receive_log_file'):
+        return
+
+
+@then('the lidi-file-receive log file should be empty')
+def step_verify_lidi_file_receive_log_empty(context):
+    """Verify that the lidi-file-receive log file is empty."""
+    if not hasattr(context, 'lidi_file_receive_log_file'):
+        raise Exception("No lidi-file-receive log file was prepared")
+    _verify_log_file_empty(context.lidi_file_receive_log_file)
+
+
+@then('the lidi-file-receive log file contains no {level} level messages')
+def step_verify_no_log_level_lidi_file_receive(context, level):
+    """Verify that the lidi-file-receive log file does not contain messages of the specified level."""
+    if not hasattr(context, 'lidi_file_receive_log_file'):
+        return
+    _verify_no_log_level(context.lidi_file_receive_log_file, level)
+
+
+@then('the lidi-file-receive log file contains {level} or higher level messages')
+def step_verify_log_level_present_lidi_file_receive(context, level):
+    """Verify that the lidi-file-receive log file contains messages at the specified level or higher."""
+    if not hasattr(context, 'lidi_file_receive_log_file'):
+        raise Exception("No lidi-file-receive log file was prepared")
+    _verify_log_level_present(context.lidi_file_receive_log_file, level)

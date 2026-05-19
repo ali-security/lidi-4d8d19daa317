@@ -69,7 +69,23 @@ def start_lidi_file_receive(context):
     lidi_receive_file_command = build_lidi_receive_file_command(context)
 
     # Start lidi-file-receive
-    context.proc_lidi_receive_file = subprocess.Popen(lidi_receive_file_command)
+    context.proc_lidi_receive_file = subprocess.Popen(
+        lidi_receive_file_command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE
+    )
+
+    # Wait enough time for lidi-file-receive to be ready
+    time.sleep(PROCESS_READY_DELAY)
+
+    # Check it is running
+    poll = context.proc_lidi_receive_file.poll()
+    if poll is not None:
+        stdout, stderr = context.proc_lidi_receive_file.communicate()
+        print(f"lidi-file-receive failed with return code {poll}")
+        if stderr:
+            print(f"Stderr: {stderr.decode()}")
+        raise Exception("Can't start lidi file receive")
 
 def stop_lidi_file_receive(context):
     """Stop the lidi file receive process."""
@@ -142,9 +158,19 @@ def start_lidi_send_dir(context, watch=False, ignore=None):
     lidi_send_dir_command = build_lidi_send_dir_command(context, watch, ignore)
 
     # Start lidi-dir-send
-    context.proc_lidi_send_dir = subprocess.Popen(lidi_send_dir_command)
+    context.proc_lidi_send_dir = subprocess.Popen(
+        lidi_send_dir_command,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL
+    )
 
     time.sleep(PROCESS_READY_DELAY)
+
+    # Check it is running
+    poll = context.proc_lidi_send_dir.poll()
+    if poll is not None:
+        print(f"lidi-dir-send failed with return code {poll}")
+        raise Exception("Can't start lidi dir send")
 
 def send_file_command(context, filename, background=False):
     """Execute send file command with specified parameters."""    

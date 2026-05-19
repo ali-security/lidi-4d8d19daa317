@@ -1,6 +1,6 @@
 //! Worker that acquires multiplex access and then becomes a `crate::receive::client` worker
 
-use crate::client;
+use crate::{client, client_reorder};
 use lidi_command_utils::config;
 use lidi_protocol as protocol;
 use std::{io::Write, os::fd::AsRawFd, thread};
@@ -18,11 +18,43 @@ where
     loop {
         let (endpoint_id, client_id, recvq) = receiver.for_clients.recv()?;
 
-        let client_res = client::start(receiver, thread_number, endpoint_id, client_id, &recvq);
+        let Some(endpoint) = receiver.config.to.get(usize::from(endpoint_id.value())) else {
+            log::error!("{}", protocol::Error::InvalidEndpoint(endpoint_id,));
+            continue;
+        };
 
-        if let Err(e) = client_res {
-            log::error!("client {client_id:x}: {e}");
-        }
+        thread::scope(|scope| {
+            let (to_client, for_client) = recvq
+                .capacity()
+                .map_or_else(crossbeam_channel::unbounded, crossbeam_channel::bounded);
+
+            thread::Builder::new()
+                .name(format!("client_{thread_number}_reorder"))
+                .spawn_scoped(scope, move || {
+                    if let Err(e) = client_reorder::start(
+                        receiver,
+                        thread_number,
+                        client_id,
+                        &recvq,
+                        &to_client,
+                        endpoint.options().hash,
+                    ) {
+                        log::error!("client reorder error {client_id:x}: {e}");
+                    }
+
+                    let _ = recvq;
+                    let _ = to_client;
+                })
+                .unwrap();
+
+            let client_res = client::start(receiver, endpoint_id, endpoint, client_id, &for_client);
+
+            if let Err(e) = client_res {
+                log::error!("client {client_id:x}: {e}");
+            }
+
+            let _ = for_client;
+        });
 
         receiver
             .active_transfers

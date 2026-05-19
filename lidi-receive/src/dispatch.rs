@@ -90,11 +90,9 @@ pub fn start<ClientNew, ClientEnd>(
                     }
                     Some(endpoint_id) => {
                         let (client_sendq, client_recvq) = if 0 < receiver.config.queue_size {
-                            crossbeam_channel::bounded::<protocol::Block>(
-                                receiver.config.queue_size,
-                            )
+                            crossbeam_channel::bounded(receiver.config.queue_size)
                         } else {
-                            crossbeam_channel::unbounded::<protocol::Block>()
+                            crossbeam_channel::unbounded()
                         };
                         receiver
                             .active_transfers

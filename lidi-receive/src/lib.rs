@@ -30,6 +30,7 @@ use std::{
 };
 
 mod client;
+mod client_reorder;
 mod clients;
 mod dispatch;
 mod reblock;
@@ -85,6 +86,12 @@ impl From<crossbeam_channel::SendError<raptorq::EncodingPacket>> for Error {
 impl From<crossbeam_channel::SendError<Vec<raptorq::EncodingPacket>>> for Error {
     fn from(_: crossbeam_channel::SendError<Vec<raptorq::EncodingPacket>>) -> Self {
         Self::SendPackets
+    }
+}
+
+impl From<crossbeam_channel::SendError<protocol::Block>> for Error {
+    fn from(_: crossbeam_channel::SendError<protocol::Block>) -> Self {
+        Self::SendBlock
     }
 }
 

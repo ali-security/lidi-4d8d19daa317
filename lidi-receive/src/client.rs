@@ -2,14 +2,14 @@
 
 use lidi_command_utils::config;
 use lidi_protocol as protocol;
-use std::{collections, io::Write, os::fd::AsRawFd};
+use std::{io::Write, os::fd::AsRawFd};
 
 pub fn start<C, ClientNew, ClientEnd, E>(
     receiver: &crate::Receiver<ClientNew, ClientEnd>,
-    thread_number: u32,
     endpoint_id: protocol::EndpointId,
+    endpoint: &config::Endpoint,
     client_id: protocol::ClientId,
-    recvq: &crossbeam_channel::Receiver<protocol::Block>,
+    for_client: &crossbeam_channel::Receiver<protocol::Block>,
 ) -> Result<(), crate::Error>
 where
     C: Write + AsRawFd,
@@ -17,55 +17,18 @@ where
     ClientEnd: Send + Sync + Fn(C, bool),
     E: Into<crate::Error>,
 {
-    let Some(endpoint) = receiver.config.to.get(usize::from(endpoint_id.value())) else {
-        return Err(crate::Error::Protocol(protocol::Error::InvalidEndpoint(
-            endpoint_id,
-        )));
-    };
-
     let endpoint_options = endpoint.options();
 
     log::info!(
         "client {client_id:x}: starting transfer to endpoint {endpoint_id} ({endpoint_options})"
     );
 
-    #[cfg(not(feature = "hash"))]
-    if endpoint_options.hash {
-        log::warn!("hash was not enabled at compilation, ignoring this parameter");
-    }
-
     let mut client = (receiver.client_new)(endpoint, client_id).map_err(Into::into)?;
 
-    let mut expected_sequence_number = 1; // 0 is consumed by the Start
-    let mut parked = collections::HashMap::new();
     let mut transmitted = 0;
 
-    #[cfg(feature = "hash")]
-    let mut hasher = if endpoint_options.hash {
-        Some(lidi_command_utils::hash::StreamHasher::default())
-    } else {
-        None
-    };
-
     loop {
-        let block = if let Some(block) = parked.remove(&expected_sequence_number) {
-            #[cfg(feature = "prometheus")]
-            #[allow(clippy::cast_precision_loss)]
-            metrics::gauge!(format!("lidi_client_{thread_number}_parked_size"))
-                .set(parked.len() as f64);
-            if parked.len() < parked.capacity() / 2 {
-                parked.shrink_to_fit();
-            }
-            block
-        } else if let Some(timeout) = receiver.config.abort_timeout {
-            recvq.recv_timeout(timeout).map_err(crate::Error::from)?
-        } else {
-            recvq.recv().map_err(crate::Error::from)?
-        };
-
-        #[cfg(feature = "prometheus")]
-        #[allow(clippy::cast_precision_loss)]
-        metrics::gauge!(format!("lidi_client_{thread_number}_queue_len")).set(recvq.len() as f64);
+        let block = for_client.recv()?;
 
         let block_type = block.block_type()?;
 
@@ -75,26 +38,10 @@ where
             return Ok(());
         }
 
-        let sequence_number = block.sequence_number();
-
-        if sequence_number != expected_sequence_number {
-            if parked.insert(sequence_number, block).is_some() {
-                return Err(crate::Error::Internal(format!(
-                    "duplicate sequence number {sequence_number}"
-                )));
-            }
-            continue;
-        }
-
         let payload = block.payload();
 
         if !payload.is_empty() {
             log::trace!("client {client_id:x}: payload {} bytes", payload.len());
-
-            #[cfg(feature = "hash")]
-            if let Some(hasher) = hasher.as_mut() {
-                hasher.update(payload);
-            }
 
             transmitted += payload.len();
 
@@ -105,26 +52,11 @@ where
         }
 
         if matches!(block_type, protocol::BlockType::End) {
-            #[cfg(feature = "hash")]
-            if let Some(hasher) = hasher {
-                let hash = hasher.finalize();
-                log::info!(
-                    "client {client_id:x}: finished transfer, {transmitted} bytes transmitted, hash is {hash:x}"
-                );
-            } else {
-                log::info!(
-                    "client {client_id:x}: finished transfer, {transmitted} bytes transmitted"
-                );
-            }
-
-            #[cfg(not(feature = "hash"))]
             log::info!("client {client_id:x}: finished transfer, {transmitted} bytes transmitted");
 
             client.flush()?;
             (receiver.client_end)(client, true);
             return Ok(());
         }
-
-        expected_sequence_number = expected_sequence_number.wrapping_add(1);
     }
 }

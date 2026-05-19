@@ -1195,3 +1195,52 @@ def step_verify_receiver_running(context):
     poll = context.proc_lidi_receive.poll()
     if poll is not None:
         raise Exception(f"lidi-receive crashed or exited with return code {poll}")
+
+
+def _read_sender_daemon_log(context):
+    log_file = os.path.join(context.base_dir, "lidi_send.log")
+    if not os.path.exists(log_file):
+        return ""
+    with open(log_file) as f:
+        return f.read()
+
+
+@given('UDP send mode is {mode}')
+def step_configure_udp_send_mode(context, mode):
+    """Configure UDP send mode (native, msg, or mmsg)."""
+    context.udp_send_mode = mode
+
+
+@given('UDP receive mode is {mode}')
+def step_configure_udp_receive_mode(context, mode):
+    """Configure UDP receive mode (native, msg, or mmsg)."""
+    context.udp_receive_mode = mode
+
+
+@given('UDP mode is {mode}')
+def step_configure_udp_mode(context, mode):
+    """Configure both UDP send and receive mode (native, msg, or mmsg)."""
+    context.udp_send_mode = mode
+    context.udp_receive_mode = mode
+
+
+@then('the sender log shows send mode {mode}')
+def step_verify_sender_mode(context, mode):
+    """Verify that the sender daemon log shows the expected send mode."""
+    deadline = time.time() + 10
+    while time.time() < deadline:
+        time.sleep(0.2)
+        if f'send mode is {mode}' in _read_sender_daemon_log(context):
+            return
+    raise Exception(f"Expected 'send mode is {mode}' not found in sender log after 10s")
+
+
+@then('the receiver log shows receive mode {mode}')
+def step_verify_receiver_mode(context, mode):
+    """Verify that the receiver daemon log shows the expected receive mode."""
+    deadline = time.time() + 10
+    while time.time() < deadline:
+        time.sleep(0.2)
+        if f'receive mode is {mode}' in _read_receiver_daemon_log(context):
+            return
+    raise Exception(f"Expected 'receive mode is {mode}' not found in receiver log after 10s")

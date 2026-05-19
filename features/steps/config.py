@@ -32,10 +32,11 @@ def build_lidi_config(context, udp_port, log_config, side='both'):
     queue_size = getattr(context, 'queue_size', 4096)
 
     # Build receive section dynamically to handle optional abort_timeout
+    udp_receive_mode = getattr(context, 'udp_receive_mode', 'mmsg')
     receive_lines = [
         'log = "INFO"',
         'from = "127.0.0.1"',
-        'mode = "mmsg"',
+        f'mode = "{udp_receive_mode}"',
         f"queue_size = {queue_size}",
         f"reset_timeout = {reset_timeout}",
     ]
@@ -50,6 +51,7 @@ def build_lidi_config(context, udp_port, log_config, side='both'):
     ])
 
     # Base configuration similar to tcp.config.toml
+    udp_send_mode = getattr(context, 'udp_send_mode', 'mmsg')
     config_lines = [
         f"mtu = {mtu}",
         f"ports = {ports}",
@@ -62,7 +64,7 @@ def build_lidi_config(context, udp_port, log_config, side='both'):
         'log = "INFO"',
         'to = "127.0.0.1"',
         'to_bind = "0.0.0.0:0"',
-        'mode = "mmsg"',
+        f'mode = "{udp_send_mode}"',
         'prometheus_listen = "127.0.0.1:9001"',
         f"{log_config}",
         f'from = [ "tcp[hash={str(hash_val).lower()},flush={str(flush).lower()}]:127.0.0.1:{context.tcp_send_port}" ]',

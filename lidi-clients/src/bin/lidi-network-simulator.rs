@@ -48,6 +48,14 @@ struct Args {
     #[arg(long)]
     network_up_after: Option<usize>,
 
+    /// Apply a total network blackout after a given duration (in milliseconds)
+    #[arg(long)]
+    network_down_after_duration: Option<u64>,
+
+    /// Duration of network blackout (in milliseconds)
+    #[arg(long)]
+    network_blackout_duration: Option<u64>,
+
     /// Size of UDP write buffer
     #[arg(short, long, default_value_t = 4194304)] // 4096*1024
     buffer_size: usize,
@@ -139,6 +147,37 @@ impl NetworkDown {
 
         // drop this packet if we receive enough data
         self.volume <= self.down_after
+    }
+}
+
+struct NetworkDownByDuration {
+    start_time: Instant,
+    down_after_duration: u64,  // milliseconds
+    blackout_duration: u64,    // milliseconds
+}
+
+impl NetworkDownByDuration {
+    fn new(down_after_duration: u64, blackout_duration: u64) -> Self {
+        Self {
+            start_time: Instant::now(),
+            down_after_duration,
+            blackout_duration,
+        }
+    }
+
+    /// check if network is down based on duration
+    /// return false if packet must be dropped
+    fn recv(&self) -> bool {
+        let elapsed_ms = self.start_time.elapsed().as_millis() as u64;
+
+        // network blackout hasn't started yet
+        if elapsed_ms < self.down_after_duration {
+            return true;
+        }
+
+        // check if we are within the blackout period
+        let time_since_down = elapsed_ms - self.down_after_duration;
+        time_since_down >= self.blackout_duration
     }
 }
 
@@ -286,6 +325,7 @@ fn main() {
     // maybe create all packet drop algorithm
     let mut loss_rate = None;
     let mut network_down = None;
+    let mut network_down_by_duration = None;
     let mut max_bandwidth = None;
 
     if let Some(rate) = args.loss_rate {
@@ -294,6 +334,12 @@ fn main() {
 
     if let Some(down_after) = args.network_down_after {
         network_down = Some(NetworkDown::new(down_after, args.network_up_after));
+    }
+
+    if let Some(down_after_duration) = args.network_down_after_duration {
+        if let Some(blackout_duration) = args.network_blackout_duration {
+            network_down_by_duration = Some(NetworkDownByDuration::new(down_after_duration, blackout_duration));
+        }
     }
 
     if let Some(bandwidth) = args.max_bandwidth {
@@ -328,6 +374,10 @@ fn main() {
 
         if let Some(ref mut network_down) = network_down {
             send_packet &= network_down.recv(len);
+        }
+
+        if let Some(ref network_down_by_duration) = network_down_by_duration {
+            send_packet &= network_down_by_duration.recv();
         }
 
         if let Some(ref mut max_bandwidth) = max_bandwidth {

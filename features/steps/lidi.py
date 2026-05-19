@@ -45,9 +45,9 @@ def start_lidi_receive(context):
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE
     )
-    
+
     # Wait enough time for lidi-receive to be ready
-    time.sleep(PROCESS_READY_DELAY_EXTENDED)
+    time.sleep(PROCESS_READY_DELAY)
 
     # Check it is running
     poll = context.proc_lidi_receive.poll()

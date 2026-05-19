@@ -988,3 +988,85 @@ def step_verify_log_level_present_lidi_file_receive(context, level):
     if not hasattr(context, 'lidi_file_receive_log_file'):
         raise Exception("No lidi-file-receive log file was prepared")
     _verify_log_level_present(context.lidi_file_receive_log_file, level)
+
+
+# Hash-related steps
+
+def _read_receiver_log(context):
+    log_file = os.path.join(context.base_dir, "lidi_receive_file.log")
+    if not os.path.exists(log_file):
+        return ""
+    with open(log_file) as f:
+        return f.read()
+
+
+def _read_receiver_daemon_log(context):
+    log_file = os.path.join(context.base_dir, "lidi_receive.log")
+    if not os.path.exists(log_file):
+        return ""
+    with open(log_file) as f:
+        return f.read()
+
+
+@given('lidi is started with hash on receiver')
+def step_start_lidi_with_hash_receiver(context):
+    context.hash_receive = True
+    start_diode(context)
+
+
+@then('the receiver log contains no hash error')
+def step_receiver_log_no_hash_error(context):
+    time.sleep(1)
+    if 'invalid hash' in _read_receiver_log(context):
+        raise Exception("Unexpected hash error found in receiver log")
+
+
+@then('the receiver log contains a hash error')
+def step_receiver_log_has_hash_error(context):
+    deadline = time.time() + 10
+    while time.time() < deadline:
+        time.sleep(0.5)
+        if 'invalid hash' in _read_receiver_log(context):
+            return
+    raise Exception("Expected hash error not found in receiver log after 10 s")
+
+
+# Heartbeat tests
+@given('heartbeat is configured to {heartbeat_timeout} second')
+def step_configure_heartbeat(context, heartbeat_timeout):
+    """Configure heartbeat timeout (in seconds)."""
+    context.heartbeat = int(heartbeat_timeout)
+
+
+@given('heartbeat sender is {sender_hb} second and receiver is {receiver_hb} second')
+def step_configure_heartbeat_different(context, sender_hb, receiver_hb):
+    """Configure different heartbeat values for sender and receiver (in seconds)."""
+    context.heartbeat_send = int(sender_hb)
+    context.heartbeat_receive = int(receiver_hb)
+
+
+@given('there is a network blackout of {duration_ms} milliseconds after {start_ms} milliseconds')
+def step_network_blackout_by_duration(context, duration_ms, start_ms):
+    """Configure network blackout based on duration in milliseconds."""
+    context.network_down_after_duration = int(start_ms)
+    context.network_blackout_duration = int(duration_ms)
+
+
+@then('the receiver log contains a missed heartbeat warning')
+def step_receiver_log_has_missed_heartbeat(context):
+    """Verify that the receiver daemon log contains a missed heartbeat warning."""
+    deadline = time.time() + 15
+    while time.time() < deadline:
+        time.sleep(0.5)
+        if 'no heartbeat block received for' in _read_receiver_daemon_log(context):
+            return
+    raise Exception("Expected missed heartbeat warning not found in receiver log after 15 s")
+
+
+@then('the receiver log does not contain a missed heartbeat warning')
+def step_receiver_log_no_missed_heartbeat(context):
+    """Verify that the receiver daemon log does NOT contain missed heartbeat warnings."""
+    time.sleep(2)  # Give logs time to be written
+    log_content = _read_receiver_daemon_log(context)
+    if 'no heartbeat block received for' in log_content:
+        raise Exception("Unexpected missed heartbeat warning found in receiver log")

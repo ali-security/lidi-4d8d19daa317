@@ -1,8 +1,11 @@
 from contextlib import contextmanager
 import os
 
-def build_lidi_config(context, udp_port, log_config):
-    """Build LIDI configuration string based on context and parameters."""
+def build_lidi_config(context, udp_port, log_config, side='both'):
+    """Build LIDI configuration string based on context and parameters.
+
+    side: 'send', 'receive', or 'both' - which heartbeat value to use
+    """
     # Use values from tcp.config.toml example as base
     mtu = getattr(context, 'mtu', 1500) or 1500
     ports = [int(udp_port)]
@@ -11,7 +14,17 @@ def build_lidi_config(context, udp_port, log_config):
     max_clients = 2
     hash_val = False
     flush = False
-    heartbeat = 10
+
+    # Determine heartbeat value based on side
+    if hasattr(context, 'heartbeat_send') and hasattr(context, 'heartbeat_receive'):
+        if side == 'send':
+            heartbeat = context.heartbeat_send
+        elif side == 'receive':
+            heartbeat = context.heartbeat_receive
+        else:  # 'both' - use send heartbeat for global config
+            heartbeat = context.heartbeat_send
+    else:
+        heartbeat = getattr(context, 'heartbeat', 10)
 
     # Base configuration similar to tcp.config.toml
     config_lines = [
@@ -45,22 +58,40 @@ def build_lidi_config(context, udp_port, log_config):
 
     return "\n".join(config_lines)
 
-def write_lidi_config(context, filename, udp_port, log_config):
+def write_lidi_config(context, filename, udp_port, log_config, side='both'):
     """Write LIDI configuration to file."""
     full_path = os.path.join(context.base_dir, filename)
     log_config_str = f"log4rs_config = \"{log_config}\""
+    config_str = build_lidi_config(context, udp_port, log_config_str, side=side)
     with open(full_path, "w") as config_file:
-        config_file.write(build_lidi_config(context, udp_port, log_config_str))
+        config_file.write(config_str)
     return full_path
 
 def build_lidi_send_command(context):
-    lidi_config = write_lidi_config(context, "lidi_send.toml", "5000", context.log_config_lidi_send)
+    # For send side, use heartbeat_send if available
+    original_heartbeat = getattr(context, 'heartbeat', None)
+    if hasattr(context, 'heartbeat_send'):
+        context.heartbeat = context.heartbeat_send
+
+    lidi_config = write_lidi_config(context, "lidi_send.toml", "5000", context.log_config_lidi_send, side='send')
+
+    # Always restore original (even if it was None)
+    if hasattr(context, 'heartbeat_send'):
+        if original_heartbeat is not None:
+            context.heartbeat = original_heartbeat
+        else:
+            delattr(context, 'heartbeat')
 
     lidi_send_command = [f'{context.bin_dir}/lidi-send', lidi_config]
 
     return lidi_send_command
 
 def build_lidi_receive_command(context):
+    # For receive side, use heartbeat_receive if available
+    original_heartbeat = getattr(context, 'heartbeat', None)
+    if hasattr(context, 'heartbeat_receive'):
+        context.heartbeat = context.heartbeat_receive
+
     # Determine UDP port based on network behavior
     has_network_simulator = (
         context.network_down_after or
@@ -71,7 +102,14 @@ def build_lidi_receive_command(context):
     )
     receiver_bind_udp_port = "6000" if has_network_simulator else "5000"
 
-    lidi_config = write_lidi_config(context, "lidi_receive.toml", receiver_bind_udp_port, context.log_config_lidi_receive)
+    lidi_config = write_lidi_config(context, "lidi_receive.toml", receiver_bind_udp_port, context.log_config_lidi_receive, side='receive')
+
+    # Always restore original (even if it was None)
+    if hasattr(context, 'heartbeat_receive'):
+        if original_heartbeat is not None:
+            context.heartbeat = original_heartbeat
+        else:
+            delattr(context, 'heartbeat')
 
     lidi_receive_command = [f'{context.bin_dir}/lidi-receive', lidi_config]
 
@@ -83,8 +121,12 @@ def build_lidi_receive_file_command(context):
         '--from-tcp',
         f'127.0.0.1:{context.tcp_receive_port}',
         '--log-config', context.log_config_lidi_receive_file,
-        context.receive_dir
     ]
+
+    if getattr(context, 'hash_receive', False):
+        lidi_receive_file_command.append('--hash')
+
+    lidi_receive_file_command.append(context.receive_dir)
 
     return lidi_receive_file_command
 
@@ -147,16 +189,18 @@ def build_network_simulator_command(context):
         '--to-udp', '127.0.0.1:6000',
         '--log-config', context.log_config_network_behavior
     ]
-    
+
     # Add network behavior options
     network_options = [
         ('network_down_after', '--network-down-after'),
         ('network_up_after', '--network-up-after'),
+        ('network_down_after_duration', '--network-down-after-duration'),
+        ('network_blackout_duration', '--network-blackout-duration'),
         ('network_drop', '--loss-rate'),
         ('network_max_bandwidth', '--max-bandwidth'),
         ('bandwidth_must_not_exceed', '--abort-on-max-bandwidth')
     ]
-    
+
     use_network_simulator = False
     for attr_name, option in network_options:
         attr_value = getattr(context, attr_name, None)

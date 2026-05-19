@@ -152,8 +152,8 @@ impl NetworkDown {
 
 struct NetworkDownByDuration {
     start_time: Instant,
-    down_after_duration: u64,  // milliseconds
-    blackout_duration: u64,    // milliseconds
+    down_after_duration: u64, // milliseconds
+    blackout_duration: u64,   // milliseconds
 }
 
 impl NetworkDownByDuration {
@@ -168,7 +168,7 @@ impl NetworkDownByDuration {
     /// check if network is down based on duration
     /// return false if packet must be dropped
     fn recv(&self) -> bool {
-        let elapsed_ms = self.start_time.elapsed().as_millis() as u64;
+        let elapsed_ms = u64::try_from(self.start_time.elapsed().as_millis()).unwrap(); // this u64 will fit since the max is 580 millions of years
 
         // network blackout hasn't started yet
         if elapsed_ms < self.down_after_duration {
@@ -336,10 +336,13 @@ fn main() {
         network_down = Some(NetworkDown::new(down_after, args.network_up_after));
     }
 
-    if let Some(down_after_duration) = args.network_down_after_duration {
-        if let Some(blackout_duration) = args.network_blackout_duration {
-            network_down_by_duration = Some(NetworkDownByDuration::new(down_after_duration, blackout_duration));
-        }
+    if let Some(down_after_duration) = args.network_down_after_duration
+        && let Some(blackout_duration) = args.network_blackout_duration
+    {
+        network_down_by_duration = Some(NetworkDownByDuration::new(
+            down_after_duration,
+            blackout_duration,
+        ));
     }
 
     if let Some(bandwidth) = args.max_bandwidth {

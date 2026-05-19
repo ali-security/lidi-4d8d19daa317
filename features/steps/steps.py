@@ -1,9 +1,47 @@
 
 from behave import given, when, then, use_step_matcher
 import os
+import socket
+import threading
 import time
 import subprocess
 import re
+
+
+class UdpPacketCounter:
+    """Binds a UDP socket and records the payload size of every received datagram."""
+
+    def __init__(self, host='0.0.0.0', port=5000):
+        self.packet_sizes = []
+        self._stop = threading.Event()
+        self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        # Large receive buffer so bursts don't get dropped before the thread drains them
+        self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 16 * 1024 * 1024)
+        self._sock.bind((host, port))
+        self._sock.settimeout(0.05)
+        self._thread = threading.Thread(target=self._recv_loop, daemon=True)
+
+    def start(self):
+        self._thread.start()
+
+    def stop(self):
+        if not self._stop.is_set():
+            self._stop.set()
+            self._thread.join(timeout=2)
+            try:
+                self._sock.close()
+            except OSError:
+                pass
+
+    def _recv_loop(self):
+        while not self._stop.is_set():
+            try:
+                data, _ = self._sock.recvfrom(65536)
+                self.packet_sizes.append(len(data))
+            except socket.timeout:
+                continue
+            except OSError:
+                break
 
 from features.steps.lidi import create_file, send_file, send_multiple_files, start_diode, start_lidi_file_receive, start_lidi_receive, start_lidi_send, start_lidi_send_dir, start_throttled_diode, stop_lidi_file_receive, stop_lidi_receive, stop_lidi_send
 from features.steps.file import create_and_copy_file, create_and_copy_multiple_files, create_and_move_file, parse_human_size, test_file, test_no_file
@@ -71,6 +109,15 @@ def step_lidi_started_with_max_throughput(context, throughput):
     # throughput format: tc notation (e.g., "100mbit", "990kbit")
     context.read_rate = throughput
     start_throttled_diode(context, context.read_rate)
+
+from features.steps.tc_shaper import TcUdpShaper
+@given('lidi-send is started with max throughput of {throughput}')
+def step_lidi_send_started_with_max_throughput(context, throughput):
+    # throughput format: tc notation (e.g., "100mbit", "990kbit")
+    context.tc_shaper = TcUdpShaper(rate=throughput, port=5000)
+    context.tc_shaper.setup()
+    context.add_cleanup(context.tc_shaper.teardown)
+    start_lidi_send(context)
 
 @given('encoding block size is {encoding}')
 def step_set_encoding(context, encoding):
@@ -1203,6 +1250,100 @@ def _read_sender_daemon_log(context):
         return ""
     with open(log_file) as f:
         return f.read()
+
+
+@given('lidi is started with MTU {mtu:d}, block size {block_size:d} and repair {repair:d}%')
+def step_start_diode_with_raptorq_params(context, mtu, block_size, repair):
+    context.mtu = mtu
+    context.block_size = block_size
+    context.repair = repair
+    start_diode(context)
+
+
+@given('lidi-send is configured with MTU {mtu:d}, block size {block_size:d} and repair {repair:d}%')
+def step_configure_lidi_send_raptorq(context, mtu, block_size, repair):
+    context.mtu = mtu
+    context.block_size = block_size
+    context.repair = repair
+
+
+@then('lidi-send reports encoded block {transfer_length:d} bytes, {min_packets:d} base packets and {extra_repair:d} extra repair packets')
+def step_verify_raptorq_log(context, transfer_length, min_packets, extra_repair):
+    log_file = os.path.join(context.base_dir, "lidi_send.log")
+    content = ""
+    deadline = time.time() + 5
+    while time.time() < deadline:
+        if os.path.exists(log_file):
+            with open(log_file) as f:
+                content = f.read()
+            if "RaptorQ block" in content:
+                break
+        time.sleep(0.1)
+
+    pattern = r"RaptorQ block (\d+) bytes in (\d+) packets \+ (\d+) repair packets"
+    match = re.search(pattern, content)
+    assert match, f"RaptorQ startup log line not found in {log_file}:\n{content}"
+
+    actual_bytes = int(match.group(1))
+    actual_min = int(match.group(2))
+    actual_extra = int(match.group(3))
+
+    assert actual_bytes == transfer_length, \
+        f"encoded block size: expected {transfer_length}, got {actual_bytes}"
+    assert actual_min == min_packets, \
+        f"base packets (source + 2 mandatory repair): expected {min_packets}, got {actual_min}"
+    assert actual_extra == extra_repair, \
+        f"extra repair packets: expected {extra_repair}, got {actual_extra}"
+
+
+@given('a UDP packet counter is listening on port 5000')
+def step_start_udp_counter(context):
+    context.udp_counter = UdpPacketCounter(port=5000)
+    context.udp_counter.start()
+    context.add_cleanup(context.udp_counter.stop)
+
+
+@given('heartbeat is disabled')
+def step_disable_heartbeat(context):
+    context.heartbeat = 0
+
+
+@when('a TCP client sends {data_bytes:d} bytes to lidi-send and disconnects')
+def step_tcp_send_data(context, data_bytes):
+    chunk = b'\x00' * 8192
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.connect(('127.0.0.1', context.tcp_send_port))
+        sent = 0
+        while sent < data_bytes:
+            n = min(8192, data_bytes - sent)
+            s.send(chunk[:n])
+            sent += n
+    # TCP close triggers the End block; wait for all UDP packets to be sent
+    time.sleep(1)
+
+
+@then('the UDP packet counter receives {total:d} packets')
+def step_verify_packet_count(context, total):
+    context.udp_counter.stop()
+    actual = len(context.udp_counter.packet_sizes)
+    assert actual == total, \
+        f"Expected {total} UDP packets, got {actual}"
+
+
+@then('each UDP packet payload is {size:d} bytes')
+def step_verify_packet_size(context, size):
+    wrong = [s for s in context.udp_counter.packet_sizes if s != size]
+    assert not wrong, \
+        f"Expected all packets to be {size} bytes, " \
+        f"got unexpected sizes: {sorted(set(wrong))}"
+
+
+@when('lidi-receive is added to complete the diode')
+def step_transition_to_e2e(context):
+    context.udp_counter.stop()
+    stop_lidi_send(context)
+    time.sleep(1)
+    start_diode(context)
 
 
 @given('UDP send mode is {mode}')

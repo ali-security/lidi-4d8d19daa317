@@ -26,6 +26,29 @@ def build_lidi_config(context, udp_port, log_config, side='both'):
     else:
         heartbeat = getattr(context, 'heartbeat', 10)
 
+    # Timeout configuration
+    reset_timeout = getattr(context, 'reset_timeout', 2)
+    abort_timeout = getattr(context, 'abort_timeout', 60)
+    queue_size = getattr(context, 'queue_size', 4096)
+
+    # Build receive section dynamically to handle optional abort_timeout
+    receive_lines = [
+        'log = "INFO"',
+        'from = "127.0.0.1"',
+        'mode = "mmsg"',
+        f"queue_size = {queue_size}",
+        f"reset_timeout = {reset_timeout}",
+    ]
+    # Only include abort_timeout if it's not disabled (not 0)
+    if abort_timeout != 0:
+        receive_lines.append(f"abort_timeout = {abort_timeout}")
+
+    receive_lines.extend([
+        'prometheus_listen = "127.0.0.1:9002"',
+        f"{log_config}",
+        f'to = [ "tcp[hash={str(hash_val).lower()},flush={str(flush).lower()}]:127.0.0.1:{context.tcp_receive_port}" ]'
+    ])
+
     # Base configuration similar to tcp.config.toml
     config_lines = [
         f"mtu = {mtu}",
@@ -45,16 +68,8 @@ def build_lidi_config(context, udp_port, log_config, side='both'):
         f'from = [ "tcp[hash={str(hash_val).lower()},flush={str(flush).lower()}]:127.0.0.1:{context.tcp_send_port}" ]',
         "",
         "[receive]",
-        'log = "INFO"',
-        'from = "127.0.0.1"',
-        'mode = "mmsg"',
-        "queue_size = 4096",
-        "reset_timeout = 2",
-        "abort_timeout = 60",
-        'prometheus_listen = "127.0.0.1:9002"',
-        f"{log_config}",
-        f'to = [ "tcp[hash={str(hash_val).lower()},flush={str(flush).lower()}]:127.0.0.1:{context.tcp_receive_port}" ]'
     ]
+    config_lines.extend(receive_lines)
 
     return "\n".join(config_lines)
 

@@ -155,6 +155,7 @@ struct Config {
     to: Vec<config::Endpoint>,
     reset_timeout: time::Duration,
     abort_timeout: Option<time::Duration>,
+    // Maximum number of RaptorQ blocks to buffer for each client (0 means infinite).
     queue_size: usize,
     mode: config::Mode,
     #[cfg(feature = "prometheus")]

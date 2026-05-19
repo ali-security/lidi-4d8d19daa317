@@ -204,3 +204,81 @@ def step_verify_lidi_send_running(context):
     poll = context.proc_lidi_send.poll()
     if poll is not None:
         raise Exception(f"lidi-send crashed with return code {poll}")
+
+
+# Buffer size tests
+@given('buffer size is set to {size}')
+def step_set_buffer_size(context, size):
+    """Set the buffer size for subsequent lidi-file-send commands."""
+    context.buffer_size = size
+
+
+# Log config tests
+@given('logging configuration is disabled')
+def step_disable_log_config(context):
+    """Disable the --log-config option for subsequent commands."""
+    context.skip_log_config = True
+
+
+@given('log level is set to {level}')
+def step_set_log_level(context, level):
+    """Set the log level for commands without a config file."""
+    context.log_level = level
+
+
+@then('command should have failed with non-zero exit code')
+def step_verify_command_failed(context):
+    """Verify that the last send command failed with non-zero exit code."""
+    if not hasattr(context, 'send_returncode'):
+        raise Exception("No send command was executed")
+    if context.send_returncode == 0:
+        raise Exception(f"Expected non-zero exit code, got {context.send_returncode}")
+
+
+@when('lidi-file-send with log-config {log_config_path} file {name} of size {size}')
+def step_send_file_with_log_config_path(context, log_config_path, name, size):
+    """Send a file using a specific log-config path (may not exist)."""
+    filename = os.path.join(context.send_dir, name)
+    from features.steps.file import create_file
+    create_file(context, filename, size)
+
+    cmd = [
+        f"{context.bin_dir}/lidi-file-send",
+        "--buffer-size", "8192",
+        "--to-tcp", f"127.0.0.1:{context.tcp_send_port}",
+        "--log-config", log_config_path,
+        filename
+    ]
+
+    result = subprocess.run(cmd, timeout=10, text=True, capture_output=True)
+    context.send_returncode = result.returncode
+    context.send_error_output = result.stderr
+
+
+@given('an invalid log4rs config file is created')
+def step_create_invalid_log_config(context):
+    """Create an invalid log4rs configuration file."""
+    invalid_config_path = os.path.join(context.base_dir, "invalid_log_config.yaml")
+    with open(invalid_config_path, "w") as f:
+        f.write("this is not valid yaml: [ unclosed bracket\n")
+    context.invalid_log_config_path = invalid_config_path
+
+
+@when('lidi-file-send with the invalid log-config file {name} of size {size}')
+def step_send_file_with_invalid_log_config(context, name, size):
+    """Send a file using the invalid log-config file."""
+    filename = os.path.join(context.send_dir, name)
+    from features.steps.file import create_file
+    create_file(context, filename, size)
+
+    cmd = [
+        f"{context.bin_dir}/lidi-file-send",
+        "--buffer-size", "8192",
+        "--to-tcp", f"127.0.0.1:{context.tcp_send_port}",
+        "--log-config", context.invalid_log_config_path,
+        filename
+    ]
+
+    result = subprocess.run(cmd, timeout=10, text=True, capture_output=True)
+    context.send_returncode = result.returncode
+    context.send_error_output = result.stderr

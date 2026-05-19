@@ -106,27 +106,37 @@ def build_lidi_send_dir_command(context, watch, ignore):
     return lidi_send_dir_command
 
 def build_lidi_send_file_command(context, filename):
-    # Création de la liste de base pour la commande
+    # Get buffer size from context or use default
+    buffer_size = getattr(context, 'buffer_size', '8192')
+
+    # Build base command
     base_command = [
         f"{context.bin_dir}/lidi-file-send",
         "--buffer-size",
-        "8192",
+        buffer_size,
         "--to-tcp",
         f"127.0.0.1:{context.tcp_send_port}",
-        '--log-config', context.log_config_lidi_send_file
     ]
-    
-    # Convertir filename en liste pour la fusion
-    # Si filename est déjà une liste, l'utiliser telle quelle
-    # Sinon, le mettre dans une liste
+
+    # Add log-level if specified
+    if hasattr(context, 'log_level') and context.log_level:
+        base_command.extend(['--log-level', context.log_level])
+
+    # Add log-config if not disabled
+    if not getattr(context, 'skip_log_config', False):
+        # Use override value if provided, otherwise use default
+        log_config = getattr(context, 'log_config_override', None) or context.log_config_lidi_send_file
+        base_command.extend(['--log-config', log_config])
+
+    # Convert filename to list if needed
     if isinstance(filename, list):
         filename_list = filename
     else:
         filename_list = [filename]
-    
-    # Fusion des deux listes : la commande de base et la liste contenant filename
+
+    # Merge base command with filenames
     lidi_send_file_command = base_command + filename_list
-    
+
     return lidi_send_file_command
 
 def build_network_simulator_command(context):

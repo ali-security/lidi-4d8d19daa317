@@ -188,3 +188,50 @@ Feature: Configuration parsing (TOML, CLI, defaults, error handling)
     When lidi-receive is started with this TOML config
     Then lidi-receive startup fails
     And the error message contains "to" or "endpoint" or "required" (lidi-receive)
+
+
+  Scenario: MTU below minimum (1279) is rejected
+    # Tests that MTU must be at least 1280 bytes
+    Given a TOML config file is created with
+      """
+      mtu = 1279
+      ports = [5000]
+
+      [send]
+      to = "127.0.0.1"
+      from = ["tcp:127.0.0.1:4000"]
+      """
+    When lidi-send is started with this TOML config
+    Then lidi-send startup fails
+    And the error message contains "MTU" or "1280" or "minimum"
+
+
+  Scenario: MTU at minimum boundary (1280) is accepted
+    # Tests that MTU of exactly 1280 bytes is valid
+    Given a TOML config file is created with
+      """
+      mtu = 1280
+      ports = [5000]
+
+      [send]
+      to = "127.0.0.1"
+      from = ["tcp:127.0.0.1:4000"]
+      """
+    When lidi-send is started with this TOML config
+    Then lidi-send startup succeeds
+
+
+  Scenario: Large MTU (16000) is accepted
+    # Tests that large MTU values are accepted if network supports them
+    # No upper limit is enforced - leave it to network configuration
+    Given a TOML config file is created with
+      """
+      mtu = 16000
+      ports = [5000]
+
+      [send]
+      to = "127.0.0.1"
+      from = ["tcp:127.0.0.1:4000"]
+      """
+    When lidi-send is started with this TOML config
+    Then lidi-send startup succeeds

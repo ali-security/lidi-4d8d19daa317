@@ -98,7 +98,9 @@ def build_lidi_receive_command(context):
         context.network_up_after or
         context.network_drop or
         context.network_max_bandwidth or
-        context.bandwidth_must_not_exceed
+        context.bandwidth_must_not_exceed or
+        getattr(context, 'network_down_after_duration', None) or
+        getattr(context, 'network_blackout_duration', None)
     )
     receiver_bind_udp_port = "6000" if has_network_simulator else "5000"
 

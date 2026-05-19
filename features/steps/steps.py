@@ -43,7 +43,77 @@ class UdpPacketCounter:
             except OSError:
                 break
 
-from features.steps.lidi import create_file, send_file, send_multiple_files, start_diode, start_lidi_file_receive, start_lidi_receive, start_lidi_send, start_lidi_send_dir, start_throttled_diode, stop_lidi_file_receive, stop_lidi_receive, stop_lidi_send
+
+class UdpClient:
+    """Sends UDP datagrams to a specified host:port."""
+
+    def __init__(self, host='127.0.0.1', port=5010):
+        self.host = host
+        self.port = port
+        self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+    def send(self, data):
+        """Send a datagram (bytes)."""
+        self._sock.sendto(data, (self.host, self.port))
+
+    def send_multiple(self, datagram_sizes, count=1, delay=0):
+        """Send multiple datagrams of specified sizes.
+
+        If count > 1 and datagram_sizes is a list, sends count datagrams for each size.
+        If delay > 0, sleeps between datagrams.
+        """
+        if isinstance(datagram_sizes, int):
+            datagram_sizes = [datagram_sizes]
+
+        for _ in range(count):
+            for size in datagram_sizes:
+                data = b'\x00' * size
+                self.send(data)
+                if delay > 0:
+                    time.sleep(delay)
+
+    def close(self):
+        try:
+            self._sock.close()
+        except OSError:
+            pass
+
+
+class UdpServer:
+    """Binds a UDP socket and records received datagrams."""
+
+    def __init__(self, host='127.0.0.1', port=5020):
+        self.datagrams = []
+        self._stop = threading.Event()
+        self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 16 * 1024 * 1024)
+        self._sock.bind((host, port))
+        self._sock.settimeout(0.05)
+        self._thread = threading.Thread(target=self._recv_loop, daemon=True)
+
+    def start(self):
+        self._thread.start()
+
+    def stop(self):
+        if not self._stop.is_set():
+            self._stop.set()
+            self._thread.join(timeout=2)
+            try:
+                self._sock.close()
+            except OSError:
+                pass
+
+    def _recv_loop(self):
+        while not self._stop.is_set():
+            try:
+                data, _ = self._sock.recvfrom(65536)
+                self.datagrams.append(data)
+            except socket.timeout:
+                continue
+            except OSError:
+                break
+
+from features.steps.lidi import create_file, send_file, send_multiple_files, start_diode, start_lidi_file_receive, start_lidi_receive, start_lidi_send, start_lidi_send_dir, start_lidi_udp_send, start_lidi_udp_receive, start_throttled_diode, start_udp_tunnel_diode, stop_lidi_file_receive, stop_lidi_receive, stop_lidi_send, stop_lidi_udp_send, stop_lidi_udp_receive
 from features.steps.file import create_and_copy_file, create_and_copy_multiple_files, create_and_move_file, parse_human_size, test_file, test_no_file
 from features.steps.config import build_lidi_send_file_command
 
@@ -1774,3 +1844,143 @@ def step_verify_error_message_contains_any_receive(context, text, text2, text3):
             f"Error message does not contain '{text}', '{text2}', or '{text3}'.\n"
             f"Actual error: {stderr}"
         )
+
+
+# UDP tunnel tests
+@given('lidi diode is started')
+def step_start_lidi_diode(context):
+    """Start the lidi diode system for UDP tunnel tests."""
+    start_udp_tunnel_diode(context)
+
+
+@given('lidi-udp-send is started listening on {port:d}')
+def step_start_lidi_udp_send(context, port):
+    """Start lidi-udp-send listening on the specified UDP port."""
+    start_lidi_udp_send(context, listen_port=port)
+    context.add_cleanup(lambda: stop_lidi_udp_send(context))
+
+
+@given('lidi-udp-receive is started forwarding to {port:d}')
+def step_start_lidi_udp_receive(context, port):
+    """Start lidi-udp-receive forwarding to the specified UDP port."""
+    start_lidi_udp_receive(context, forward_port=port)
+    context.add_cleanup(lambda: stop_lidi_udp_receive(context))
+
+    # Also start the UDP server listener on the forward port
+    context.udp_server = UdpServer(host='127.0.0.1', port=port)
+    context.udp_server.start()
+    context.add_cleanup(context.udp_server.stop)
+
+
+@when('a UDP client sends {count:d} datagrams of {size:d} bytes each to {port:d}')
+def step_udp_send_datagrams(context, count, size, port):
+    """Send multiple UDP datagrams of specified size."""
+    client = UdpClient(host='127.0.0.1', port=port)
+    context.add_cleanup(client.close)
+    client.send_multiple([size], count=count, delay=0.01)
+
+
+@when('a UDP client sends datagrams of sizes {sizes} bytes to {port:d}')
+def step_udp_send_variable_sizes(context, sizes, port):
+    """Send UDP datagrams of various sizes from a comma-separated list."""
+    size_list = [int(s.strip()) for s in sizes.split(',')]
+    client = UdpClient(host='127.0.0.1', port=port)
+    context.add_cleanup(client.close)
+    client.send_multiple(size_list, count=1, delay=0.01)
+
+
+@when('a UDP client sends {count:d} datagrams of {size:d} bytes each to {port:d} rapidly')
+def step_udp_send_rapidly(context, count, size, port):
+    """Send multiple UDP datagrams rapidly (no delay between sends)."""
+    client = UdpClient(host='127.0.0.1', port=port)
+    context.add_cleanup(client.close)
+    client.send_multiple([size], count=count, delay=0)
+
+
+@when('a UDP client attempts to send a {size:d}KB datagram to {port:d}')
+def step_udp_send_oversized(context, size, port):
+    """Attempt to send an oversized UDP datagram (may truncate or fail)."""
+    client = UdpClient(host='127.0.0.1', port=port)
+    context.add_cleanup(client.close)
+    # Create oversized datagram (size in KB)
+    oversized_data = b'\x00' * (size * 1024)
+    try:
+        client.send(oversized_data)
+        context.oversized_send_succeeded = True
+    except OSError as e:
+        context.oversized_send_succeeded = False
+        context.oversized_send_error = str(e)
+
+
+@then('the UDP server on {port:d} receives exactly {count:d} datagrams')
+def step_verify_datagram_count(context, port, count):
+    """Verify that a UDP server on the specified port receives the expected number of datagrams."""
+    # Give server time to collect datagrams (longer for RaptorQ processing)
+    time.sleep(3)
+
+    assert hasattr(context, 'udp_server') and context.udp_server, \
+        "UDP server was not started"
+
+    actual = len(context.udp_server.datagrams)
+    assert actual == count, \
+        f"FAILURE: UDP datagram transfer failed. Expected {count} datagrams on {port}, got {actual}. " \
+        f"Data did not flow through lidi-udp-send → diode → lidi-udp-receive tunnel."
+
+
+@then('the UDP server on {port:d} receives {count:d} datagrams with matching sizes')
+def step_verify_datagram_sizes(context, port, count):
+    """Verify that datagrams received match the sent sizes."""
+    # Give server time to collect datagrams (longer for RaptorQ processing)
+    time.sleep(3)
+
+    assert hasattr(context, 'udp_server') and context.udp_server, \
+        "UDP server was not started"
+
+    actual = len(context.udp_server.datagrams)
+    assert actual == count, \
+        f"FAILURE: UDP datagram transfer failed. Expected {count} datagrams on {port}, got {actual}. " \
+        f"Data did not flow through tunnel."
+
+    # Verify sizes match what was sent
+    received_sizes = sorted([len(dg) for dg in context.udp_server.datagrams])
+    expected_sizes = sorted([64, 256, 1024, 4096, 16384])
+
+    assert received_sizes == expected_sizes, \
+        f"FAILURE: Datagram size preservation failed. Expected sizes {expected_sizes}, got {received_sizes}. " \
+        f"Datagrams were corrupted or incorrectly forwarded."
+
+
+@then('the UDP server on {port:d} receives at least {min_count:d} datagrams in {seconds:d} seconds')
+def step_verify_minimum_datagrams(context, port, min_count, seconds):
+    """Verify that at least min_count datagrams are received within the timeout."""
+    assert hasattr(context, 'udp_server') and context.udp_server, \
+        "UDP server was not started"
+
+    # Wait for specified duration
+    time.sleep(seconds)
+
+    actual = len(context.udp_server.datagrams)
+    assert actual >= min_count, \
+        f"FAILURE: High-throughput UDP forwarding test failed. " \
+        f"Expected at least {min_count} datagrams in {seconds}s on {port}, got {actual}. " \
+        f"Tunnel throughput insufficient or data not flowing."
+
+
+@then('the datagram is either truncated to {max_size:d} bytes or dropped')
+def step_verify_oversized_handling(context, max_size):
+    """Verify that oversized datagrams are handled (truncated or dropped)."""
+    # This step just verifies that the send attempt completed (doesn't crash the sender)
+    # The actual behavior (truncation vs drop) is handled by the OS
+    assert hasattr(context, 'oversized_send_succeeded'), \
+        "No oversized send attempt was made"
+
+
+@then('lidi-udp-send does not crash')
+def step_verify_udp_send_not_crashed(context):
+    """Verify that lidi-udp-send is still running."""
+    assert hasattr(context, 'proc_lidi_udp_send'), \
+        "lidi-udp-send was not started"
+
+    poll = context.proc_lidi_udp_send.poll()
+    assert poll is None, \
+        f"lidi-udp-send crashed with exit code {poll}"

@@ -14,7 +14,7 @@ def build_lidi_config(context, udp_port, log_config, side='both'):
     repair = _repair if _repair is not None else 1
     max_clients = 2
     hash_val = False
-    flush = False
+    flush = getattr(context, 'tcp_flush', False)
 
     # Determine heartbeat value based on side
     if hasattr(context, 'heartbeat_send') and hasattr(context, 'heartbeat_receive'):

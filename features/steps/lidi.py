@@ -206,3 +206,86 @@ def send_multiple_files(context):
     file_paths = [context.files[name]['path'] for name in context.files.keys()]
     send_file_command(context, file_paths, background=False)
 
+
+def start_udp_tunnel_diode(context):
+    """Start lidi diode configured for UDP tunnel tests (no lidi-file components).
+
+    flush=true is required because lidi-udp-send keeps its TCP connection open
+    indefinitely, so lidi-receive never gets an End block to trigger a BufWriter
+    flush. Without it the data stalls in the BufWriter and never reaches
+    lidi-udp-receive.
+    """
+    context.tcp_flush = True
+
+    # Start lidi-receive first (without lidi-file-receive)
+    start_lidi_receive(context)
+
+    # Finally start lidi-send (send init packet to lidi-receive, acts as a server for lidi-udp-send)
+    start_lidi_send(context)
+
+
+def start_lidi_udp_send(context, listen_port=5010):
+    """Start lidi-udp-send listening on UDP listen_port."""
+    lidi_udp_send_command = [
+        f'{context.bin_dir}/lidi-udp-send',
+        '--from', f'127.0.0.1:{listen_port}',
+        '--to-tcp', f'127.0.0.1:{context.tcp_send_port}',
+    ]
+
+    context.proc_lidi_udp_send = subprocess.Popen(
+        lidi_udp_send_command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE
+    )
+
+    time.sleep(PROCESS_READY_DELAY)
+
+    poll = context.proc_lidi_udp_send.poll()
+    if poll is not None:
+        stdout, stderr = context.proc_lidi_udp_send.communicate()
+        print(f"lidi-udp-send failed with return code {poll}")
+        print(f"Stdout: {stdout}")
+        print(f"Stderr: {stderr}")
+        raise Exception("Can't start lidi-udp-send")
+
+
+def stop_lidi_udp_send(context):
+    """Stop the lidi-udp-send process."""
+    if hasattr(context, 'proc_lidi_udp_send') and context.proc_lidi_udp_send:
+        context.proc_lidi_udp_send.kill()
+        context.proc_lidi_udp_send.wait()
+
+
+def start_lidi_udp_receive(context, forward_port=5020):
+    """Start lidi-udp-receive forwarding to UDP forward_port."""
+    # lidi-udp-receive listens on tcp_receive_port for connections from lidi-receive
+    lidi_udp_receive_command = [
+        f'{context.bin_dir}/lidi-udp-receive',
+        '--from-tcp', f'127.0.0.1:{context.tcp_receive_port}',
+        '--to-bind', '127.0.0.1:0',
+        '--to', f'127.0.0.1:{forward_port}',
+    ]
+
+    context.proc_lidi_udp_receive = subprocess.Popen(
+        lidi_udp_receive_command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE
+    )
+
+    time.sleep(PROCESS_READY_DELAY)
+
+    poll = context.proc_lidi_udp_receive.poll()
+    if poll is not None:
+        stdout, stderr = context.proc_lidi_udp_receive.communicate()
+        print(f"lidi-udp-receive failed with return code {poll}")
+        print(f"Stdout: {stdout}")
+        print(f"Stderr: {stderr}")
+        raise Exception("Can't start lidi-udp-receive")
+
+
+def stop_lidi_udp_receive(context):
+    """Stop the lidi-udp-receive process."""
+    if hasattr(context, 'proc_lidi_udp_receive') and context.proc_lidi_udp_receive:
+        context.proc_lidi_udp_receive.kill()
+        context.proc_lidi_udp_receive.wait()
+

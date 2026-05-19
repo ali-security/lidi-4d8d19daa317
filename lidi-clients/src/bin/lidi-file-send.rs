@@ -60,7 +60,7 @@ fn main() {
 
     if let Err(e) = lidi_clients::init_logger(args.log_level, args.log_config.as_ref()) {
         eprintln!("failed to initialize logger: {e}");
-        return;
+        std::process::exit(1);
     }
 
     if args.buffer_size == 0 {
@@ -100,5 +100,6 @@ fn main() {
 
     if let Err(e) = lidi_clients::file::send::send_files(&config, args.files, None) {
         log::error!("{e}");
+        std::process::exit(1);
     }
 }

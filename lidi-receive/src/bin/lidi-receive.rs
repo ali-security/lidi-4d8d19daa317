@@ -138,6 +138,13 @@ fn main() {
         return;
     }
 
+    // Validate MTU minimum (1280 is IPv6 minimum)
+    let mtu = config.common.mtu();
+    if mtu < 1280 {
+        eprintln!("configuration error: MTU must be at least 1280 bytes (got {})", mtu);
+        return;
+    }
+
     let raptorq = match protocol::RaptorQ::new(
         config.common.mtu(),
         config.common.block(),

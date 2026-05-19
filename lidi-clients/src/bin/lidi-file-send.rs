@@ -63,6 +63,11 @@ fn main() {
         return;
     }
 
+    if args.buffer_size == 0 {
+        eprintln!("buffer_size must be greater than 0");
+        std::process::exit(1);
+    }
+
     log::info!(
         "{} version {}",
         env!("CARGO_PKG_NAME"),

@@ -227,6 +227,12 @@ fn main() {
 
     let config = config::SendConfig::from(config);
 
+    // Validate that at least one endpoint is configured
+    if config.send.from().is_empty() {
+        eprintln!("configuration error: at least one 'from' endpoint must be configured in [send] section");
+        return;
+    }
+
     let raptorq = match protocol::RaptorQ::new(
         config.common.mtu(),
         config.common.block(),

@@ -132,6 +132,12 @@ fn main() {
 
     let config = config::ReceiveConfig::from(config);
 
+    // Validate that at least one endpoint is configured
+    if config.receive.to().is_empty() {
+        eprintln!("configuration error: at least one 'to' endpoint must be configured in [receive] section");
+        return;
+    }
+
     let raptorq = match protocol::RaptorQ::new(
         config.common.mtu(),
         config.common.block(),

@@ -308,6 +308,7 @@ where
         );
 
         log::info!("receive mode is {}", self.config.mode);
+        log::info!("sending to {:?}", self.config.to);
 
         log::info!(
             "reset timeout is {} seconds",

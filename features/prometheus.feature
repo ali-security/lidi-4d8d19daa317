@@ -27,7 +27,6 @@ Feature: Prometheus metrics (lidi-send / lidi-receive)
     Then lidi-file-receive file A in 10 seconds
     And the receiver Prometheus counter lidi_receive_blocks_decoded is greater than 1
 
-  @wip
   Scenario: lidi_receive_blocks_lost incremented with network loss (T15.5)
     Given there is a network interrupt of 100KB after 50KB
     And there is a limited network bandwidth of 100 Mb/s

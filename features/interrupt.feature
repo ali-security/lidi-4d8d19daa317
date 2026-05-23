@@ -27,7 +27,6 @@ Feature: Send simple files with network interrupts
     And lidi-file-send file C of size 100MB
     Then lidi-file-receive file C in 5 seconds
 
-  @wip
   Scenario: Network timeout during transfer increments blocks_lost metric
     Given there is a network interrupt of 100KB after 50KB
     And there is a limited network bandwidth of 100 Mb/s

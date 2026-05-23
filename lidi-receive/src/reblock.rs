@@ -111,6 +111,8 @@ pub fn start<ClientNew, ClientEnd>(
                                 log::warn!(
                                     "block {cur_id} is incomplete ({nb_packets} packets) after reset timeout, forcibly send to decode"
                                 );
+                                #[cfg(feature = "prometheus")]
+                                metrics::counter!("lidi_receive_blocks_lost").increment(1);
                             }
                             let _ = send_to_decode(receiver, cur_id, &mut blocks)?;
                         }

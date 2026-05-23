@@ -248,6 +248,7 @@ where
             thread::sleep(timer);
 
             metrics::gauge!("lidi_receive_dispatch_queue_len").set(self.for_dispatch.len() as f64);
+            metrics::gauge!("lidi_receive_clients_queue_len").set(self.for_clients.len() as f64);
         }
     }
 

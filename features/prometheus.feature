@@ -88,7 +88,6 @@ Feature: Prometheus metrics (lidi-send / lidi-receive)
     Then lidi-file-receive file A in 10 seconds
     And the receiver Prometheus histogram lidi_receive_decode_with_n_packets has count and sum
 
-  @wip
   Scenario: lidi_receive_clients_queue_len gauge available (T15.13)
     Given lidi is started with max throughput of 90mbit
     When lidi-file-send file A of size 500KB

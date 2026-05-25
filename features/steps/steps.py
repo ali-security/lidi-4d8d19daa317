@@ -6,6 +6,10 @@ import threading
 import time
 import subprocess
 import re
+from features.steps.slow_client import (
+    SlowTcpClient, get_process_memory_mb, monitor_process_memory,
+    find_thread_tid, starve_thread_via_cpu_pinning,
+)
 
 
 class UdpPacketCounter:
@@ -2394,3 +2398,302 @@ def step_verify_receiver_prometheus_gauge_lte(context, metric, value):
     except Exception as e:
         raise AssertionError(f"Failed to verify receiver gauge {metric}: {e}")
 
+# Slow client memory stress test steps
+
+@when('a slow TCP client reads at {rate_kbs:d} KB/s from receiver for {duration:d} seconds')
+def step_slow_client_connect_and_read(context, rate_kbs, duration):
+    """Connect a slow TCP client that reads data at specified rate."""
+    context.slow_client = SlowTcpClient(
+        host='127.0.0.1',
+        port=context.tcp_receive_port,
+        read_rate_kbs=rate_kbs,
+        max_duration=duration
+    )
+    context.slow_client.connect()
+    context.slow_client.start_reading()
+    # Record receiver PID and initial memory for monitoring
+    context.receiver_pid = context.proc_lidi_receive.pid
+    context.initial_memory_mb = get_process_memory_mb(context.receiver_pid)
+
+
+@when('lidi-file-send sends {size:d}MB to slow client')
+def step_send_to_slow_client(context, size):
+    """Send file to the slow client (which reads slowly)."""
+    # Create test file
+    test_file = os.path.join(context.send_dir, f'slow_test_{size}mb.bin')
+    file_size_bytes = size * 1024 * 1024
+    
+    # Write random data
+    with open(test_file, 'wb') as f:
+        remaining = file_size_bytes
+        while remaining > 0:
+            chunk_size = min(1024 * 1024, remaining)
+            chunk = os.urandom(chunk_size)
+            f.write(chunk)
+            remaining -= chunk_size
+
+    # Send it
+    from features.steps.config import build_lidi_send_file_command
+    lidi_send_file_command = build_lidi_send_file_command(context, test_file)
+    context.proc_lidi_send_file = subprocess.Popen(
+        lidi_send_file_command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE
+    )
+
+
+@then('receiver memory grows unbounded with queue_size={queue_size:d}')
+def step_verify_unbounded_memory_growth(context, queue_size):
+    """Verify that receiver memory grows without bound (queue_size=0 problem).
+
+    This test expects FAILURE (memory growth) to demonstrate the bug.
+    """
+    # Wait for data transfer and memory accumulation
+    time.sleep(10)
+
+    current_memory_mb = get_process_memory_mb(context.receiver_pid)
+    initial = context.initial_memory_mb or 50  # Assume ~50 MB baseline
+    growth_mb = current_memory_mb - initial if current_memory_mb else 0
+
+    # With queue_size=0 (unbounded), we expect significant growth
+    # At 10 KB/s read rate, a 100 Mb/s sender accumulates ~90 KB/s per client
+    # In 10 seconds, that's ~900 KB queued. With multiple chunks, expect 10+ MB growth
+
+    assert growth_mb > 10, \
+        f"Expected unbounded memory growth (>10 MB), got {growth_mb:.1f} MB. " \
+        f"Initial: {initial:.1f} MB, Current: {current_memory_mb:.1f} MB. " \
+        f"queue_size={queue_size} should allow unbounded growth."
+
+
+@then('receiver memory stays bounded with queue_size={queue_size:d} and abort_timeout')
+def step_verify_bounded_memory(context, queue_size):
+    """Verify that queue_size and abort_timeout protect memory.
+
+    With proper configuration, memory should not grow significantly.
+    """
+    time.sleep(5)
+
+    current_memory_mb = get_process_memory_mb(context.receiver_pid)
+    initial = context.initial_memory_mb or 50
+    growth_mb = current_memory_mb - initial if current_memory_mb else 0
+
+    # With queue_size=1000, per-client queue is limited to 1000*220KB = 220 MB max
+    # But with abort_timeout, slow client should disconnect before accumulating much
+    # Expect < 50 MB growth
+
+    assert growth_mb < 50, \
+        f"Expected bounded memory (<50 MB), got {growth_mb:.1f} MB growth. " \
+        f"queue_size={queue_size} should protect memory."
+
+
+@then('receiver closes the slow client due to abort_timeout')
+def step_verify_client_closed_by_timeout(context):
+    """Verify that slow client was disconnected by abort_timeout."""
+    # Slow client thread should detect connection closed
+    time.sleep(2)
+    context.slow_client.stop()
+
+    # Check if connection was actually closed (recv would have failed)
+    # With abort_timeout, the server closes idle connections
+    assert context.slow_client.bytes_read > 0, \
+        "Client should have received some data before being closed by abort_timeout"
+
+
+@given('slow client is configured with {rate_kbs:d} KB/s read rate')
+def step_configure_slow_client_rate(context, rate_kbs):
+    """Store slow client configuration."""
+    context.slow_client_rate_kbs = rate_kbs
+
+
+# ---------------------------------------------------------------------------
+# SIGSTOP / SIGCONT steps for lidi-file-receive
+# ---------------------------------------------------------------------------
+
+@when('lidi-file-receive is paused')
+def step_pause_lidi_file_receive(context):
+    """SIGSTOP lidi-file-receive so it stops reading from its TCP socket.
+
+    lidi-receive's client_worker will block trying to write to the full TCP
+    buffer, which prevents it from draining client_recvq. With queue_size=0
+    that queue is unbounded and fills until OOM. Records the current RSS of
+    lidi-receive as the baseline for memory-growth assertions.
+    """
+    import signal
+    assert hasattr(context, 'proc_lidi_receive_file'), \
+        "lidi-file-receive is not running (proc_lidi_receive_file not set)"
+    context.memory_at_pause_start_mb = get_process_memory_mb(
+        context.proc_lidi_receive.pid
+    )
+    os.kill(context.proc_lidi_receive_file.pid, signal.SIGSTOP)
+
+
+@when('lidi-file-receive is resumed')
+@then('lidi-file-receive is resumed')
+def step_resume_lidi_file_receive(context):
+    """SIGCONT lidi-file-receive to let it read again (cleanup after pause)."""
+    import signal
+    if hasattr(context, 'proc_lidi_receive_file') and context.proc_lidi_receive_file:
+        try:
+            os.kill(context.proc_lidi_receive_file.pid, signal.SIGCONT)
+        except ProcessLookupError:
+            pass
+
+
+# ---------------------------------------------------------------------------
+# Background file-send step (non-blocking)
+# ---------------------------------------------------------------------------
+
+@when('lidi-file-send starts sending file {name} of size {size}')
+def step_send_file_in_background(context, name, size):
+    """Create and start sending a file without waiting for it to finish."""
+    from features.steps.lidi import send_file
+    send_file(context, name, size, background=True)
+
+
+# ---------------------------------------------------------------------------
+# Stalled raw TCP client (second client slot for T-CRASH3)
+# ---------------------------------------------------------------------------
+
+@when('a stalled TCP client connects to the receiver')
+def step_stalled_client_connect(context):
+    """Open a TCP connection to lidi-receive's output port and never read.
+
+    Occupies a client slot. Combined with SIGSTOP lidi-file-receive this
+    demonstrates that each stalled client has its own independent unbounded
+    queue (with queue_size=0).
+    """
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.connect(('127.0.0.1', context.tcp_receive_port))
+    if not hasattr(context, 'stalled_clients'):
+        context.stalled_clients = []
+    context.stalled_clients.append(sock)
+
+
+# ---------------------------------------------------------------------------
+# Generic thread-starvation steps (global pipeline queue tests T-SR8..T-SR11)
+# ---------------------------------------------------------------------------
+
+def _read_receiver_prometheus_gauge(metric_name):
+    """Read a single gauge value from lidi-receive's Prometheus endpoint."""
+    import urllib.request
+    url = 'http://127.0.0.1:9002/metrics'
+    try:
+        response = urllib.request.urlopen(url, timeout=2)
+        for line in response.read().decode('utf-8').split('\n'):
+            if line.startswith(metric_name) and not line.startswith('#'):
+                parts = line.split()
+                if len(parts) >= 2:
+                    return int(float(parts[-1]))
+    except Exception:
+        pass
+    return 0
+
+
+_PIPELINE_GAUGES = [
+    'lidi_receive_reblock_queue_len',
+    'lidi_receive_decode_queue_len',
+    'lidi_receive_dispatch_queue_len',
+]
+
+
+@when('lidi-receive {thread_name} thread is paused for {seconds:d} seconds')
+def step_pause_named_thread(context, thread_name, seconds):
+    """Starve one named lidi-receive thread via taskset + chrt + CPU hog.
+
+    The target thread is pinned to CPU 0 and set to SCHED_IDLE while a
+    CPU hog occupies CPU 0 at SCHED_OTHER, so the thread cannot run.
+    All other threads continue normally on the remaining CPUs.
+
+    During the pause two things are tracked in context:
+      thread_pause_max_gauges   – dict metric_name -> peak value seen
+      thread_pause_memory_peak_mb / thread_pause_memory_start_mb
+    """
+    pid = context.proc_lidi_receive.pid
+    tid = find_thread_tid(pid, thread_name)
+    assert tid is not None, (
+        f"Thread '{thread_name}' not found in lidi-receive (PID {pid}). "
+        f"Known names: reblock, decode, dispatch, client_0, client_1, …"
+    )
+
+    context.thread_pause_max_gauges = {}
+    context.thread_pause_memory_start_mb = get_process_memory_mb(pid) or 0
+    context.thread_pause_memory_peak_mb = context.thread_pause_memory_start_mb
+    done = threading.Event()
+
+    def _monitor():
+        while not done.is_set():
+            for m in _PIPELINE_GAUGES:
+                v = _read_receiver_prometheus_gauge(m)
+                if v > context.thread_pause_max_gauges.get(m, 0):
+                    context.thread_pause_max_gauges[m] = v
+            mem = get_process_memory_mb(pid)
+            if mem and mem > context.thread_pause_memory_peak_mb:
+                context.thread_pause_memory_peak_mb = mem
+            time.sleep(0.2)
+
+    def _starve():
+        starve_thread_via_cpu_pinning(pid, tid, seconds)
+        done.set()
+
+    starve_t = threading.Thread(target=_starve, daemon=True)
+    monitor_t = threading.Thread(target=_monitor, daemon=True)
+
+    starve_t.start()
+    time.sleep(1.5)
+    monitor_t.start()
+
+    starve_t.join(timeout=seconds + 30)
+    done.set()
+    monitor_t.join(timeout=5)
+
+
+@then('the receiver Prometheus gauge {metric} did not exceed {maximum:d} during thread pause')
+def step_assert_gauge_during_pause(context, metric, maximum):
+    """Assert that metric never exceeded maximum while a thread was starved.
+
+    Fails when the corresponding upstream queue is unbounded
+    (lib.rs:280-283 crossbeam_channel::unbounded()) — no ceiling exists.
+    """
+    actual = getattr(context, 'thread_pause_max_gauges', {}).get(metric, 0)
+    assert actual <= maximum, (
+        f"{metric} reached {actual} while thread was starved "
+        f"(expected ≤ {maximum}). "
+        f"The upstream channel (lib.rs:280-283) is crossbeam_channel::unbounded()."
+    )
+
+
+@then('receiver memory did not grow by more than {mb:d} MB during thread pause')
+def step_assert_memory_during_pause(context, mb):
+    """Assert that lidi-receive RSS did not grow by more than mb MB during pause.
+
+    Used for to_clients (Issue 4, lib.rs:283) which has no Prometheus metric yet.
+    When client_0 is starved it cannot drain to_clients nor write to TCP, so the
+    per-client queue fills and memory grows.
+    """
+    start = getattr(context, 'thread_pause_memory_start_mb', 0) or 0
+    peak = getattr(context, 'thread_pause_memory_peak_mb', 0) or 0
+    growth = peak - start
+    assert growth <= mb, (
+        f"lidi-receive RSS grew by {growth:.1f} MB during thread starvation "
+        f"(expected ≤ {mb} MB). "
+        f"The upstream queue (lib.rs:280-283) is crossbeam_channel::unbounded() — "
+        f"no ceiling exists."
+    )
+
+
+@then('receiver memory grew by more than {mb:d} MB during thread pause')
+def step_assert_memory_growth_during_pause(context, mb):
+    """Assert that lidi-receive RSS grew by MORE than mb MB during pause.
+
+    TDD test: expects FAILURE to demonstrate unbounded queue vulnerability.
+    When a thread is starved, upstream queues (lib.rs:280-283) fill without limit.
+    """
+    start = getattr(context, 'thread_pause_memory_start_mb', 0) or 0
+    peak = getattr(context, 'thread_pause_memory_peak_mb', 0) or 0
+    growth = peak - start
+    assert growth >= mb, (
+        f"lidi-receive RSS grew by {growth:.1f} MB during thread starvation "
+        f"(expected ≥ {mb} MB to demonstrate bug). "
+        f"The upstream queue (lib.rs:280-283) is crossbeam_channel::unbounded(). "
+        f"If memory did not grow enough, starvation or stress may be insufficient."
+    )

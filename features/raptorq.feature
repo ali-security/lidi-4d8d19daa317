@@ -1,3 +1,10 @@
+# Required Cargo features:
+#   lidi-send:    command-line, from-tcp, send-mmsg
+#   lidi-receive: command-line, to-tcp, receive-mmsg  (phase 3 only)
+#   lidi-clients: tcp                                 (phase 3 only)
+#
+# Phases 1-2 only start lidi-send; phase 3 runs the full stack.
+#
 Feature: RaptorQ parameter validation: log, packet capture, and end-to-end transfer
 
   Combined three-level verification for each parameter set:

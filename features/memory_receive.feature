@@ -1,3 +1,14 @@
+# Required Cargo features:
+#   lidi-send:    command-line, from-tcp, send-mmsg
+#   lidi-receive: command-line, to-tcp, receive-mmsg
+#   lidi-clients: tcp
+#
+# Scenarios T-SR1, T-SR2, T-SR4, T-SR7 additionally require:
+#   lidi-send:    prometheus
+#   lidi-receive: prometheus
+#
+# T-SR3, T-SR5, T-SR6 and the T-SR8 to T-SR12b memory thread tests do not use prometheus.
+#
 Feature: Memory stability of lidi-receive under congestion
 
   # Issue → test mapping

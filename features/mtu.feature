@@ -1,3 +1,8 @@
+# Required Cargo features:
+#   lidi-send:    command-line, from-tcp, send-mmsg
+#   lidi-receive: command-line, to-tcp, receive-mmsg
+#   lidi-clients: tcp
+#
 Feature: Send simple files with limited network bandwidth
 
   Scenario: Send 100MB file with MTU 9000

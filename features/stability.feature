@@ -1,3 +1,12 @@
+# Required Cargo features:
+#   lidi-send:    command-line, from-tcp, send-mmsg, prometheus
+#   lidi-receive: command-line, to-tcp, receive-mmsg, prometheus
+#   lidi-clients: tcp
+#
+# All "Memory Stability" scenarios query Prometheus gauges/counters and require
+# the prometheus feature. The first five restart scenarios do not, but they share
+# the same Feature tag set for consistency.
+#
 Feature: Test ability of lidi to restart properly by itself
 
   Scenario: Send one file restart receiver then send another file, no file lost

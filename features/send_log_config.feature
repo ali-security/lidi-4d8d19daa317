@@ -1,3 +1,9 @@
+# Required Cargo features:
+#   lidi-send:    command-line, from-tcp, send-mmsg, log4rs
+#
+# Only lidi-send is started in these tests; lidi-receive and lidi-clients
+# are not involved. The log4rs feature must be compiled into lidi-send.
+#
 Feature: Test --log-config option with lidi-send logging
 
   Scenario: Start lidi-send without --log-config (use log-level default)

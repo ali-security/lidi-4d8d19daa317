@@ -1,3 +1,11 @@
+# Required Cargo features:
+#   lidi-send:    command-line, from-tcp, send-mmsg
+#   lidi-receive: command-line, to-tcp, receive-mmsg
+#   lidi-clients: tcp
+#
+# lidi-udp-send connects to lidi-send via TCP; lidi-receive forwards to
+# lidi-udp-receive via TCP. Both tunnel binaries are in lidi-clients.
+#
 Feature: UDP tunnel (lidi-udp-send / lidi-udp-receive)
 
   Forward UDP datagrams through the lidi diode, which normally only handles

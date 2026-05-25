@@ -1,3 +1,10 @@
+# Required Cargo features:
+#   lidi-send:    command-line, from-tcp, send-mmsg
+#   lidi-receive: command-line, to-tcp, receive-mmsg
+#   lidi-clients: tcp, log4rs
+#
+# The log4rs feature must be compiled into lidi-clients (lidi-file-send binary).
+#
 Feature: Test --log-config option with lidi-file-send logging
 
   Scenario: Send file without --log-config (use log-level default)

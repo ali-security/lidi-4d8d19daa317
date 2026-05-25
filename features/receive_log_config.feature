@@ -1,3 +1,9 @@
+# Required Cargo features:
+#   lidi-receive: command-line, to-tcp, receive-mmsg, log4rs
+#
+# Only lidi-receive is started in these tests; lidi-send and lidi-clients
+# are not involved. The log4rs feature must be compiled into lidi-receive.
+#
 Feature: Test --log-config option with lidi-receive logging
 
   Scenario: Start lidi-receive without --log-config (use log-level default)

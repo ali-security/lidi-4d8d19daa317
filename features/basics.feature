@@ -1,3 +1,8 @@
+# Required Cargo features:
+#   lidi-send:    command-line, from-tcp, send-mmsg
+#   lidi-receive: command-line, to-tcp, receive-mmsg
+#   lidi-clients: tcp
+#
 Feature: Basic lidi functionality
 
   Scenario: Send multiple 10K files without drop

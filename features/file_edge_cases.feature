@@ -1,3 +1,13 @@
+# Required Cargo features:
+#   lidi-send:    command-line, from-tcp, send-mmsg
+#   lidi-receive: command-line, to-tcp, receive-mmsg
+#   lidi-clients: tcp
+#
+# "Send a file with hash enabled" additionally requires:
+#   lidi-send:    hash
+#   lidi-receive: hash
+#   lidi-clients: hash
+#
 Feature: File transfer edge cases
 
   Scenario: Send an empty file (0 bytes)

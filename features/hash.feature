@@ -1,3 +1,8 @@
+# Required Cargo features:
+#   lidi-send:    command-line, from-tcp, send-mmsg, hash
+#   lidi-receive: command-line, to-tcp, receive-mmsg, hash
+#   lidi-clients: tcp, hash
+#
 Feature: Data integrity hashing (XXHash3)
 
   Scenario: Hash enabled on both sides - file received without error (T8.1)

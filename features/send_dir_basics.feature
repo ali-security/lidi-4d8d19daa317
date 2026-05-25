@@ -1,3 +1,10 @@
+# Required Cargo features:
+#   lidi-send:    command-line, from-tcp, send-mmsg
+#   lidi-receive: command-line, to-tcp, receive-mmsg
+#   lidi-clients: tcp, inotify
+#
+# The inotify feature enables --watch in lidi-dir-send. All scenarios use it.
+#
 Feature: Check lidi-dir-send is sending one or multiple files with copy or move
 
   Scenario: Copy a 1K file with lidi-dir-send

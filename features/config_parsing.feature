@@ -1,3 +1,11 @@
+# Required Cargo features:
+#   lidi-send:    command-line, from-tcp
+#   lidi-receive: command-line, to-tcp
+#
+# These tests only verify binary startup and config parsing — no file transfer
+# occurs, so tcp (lidi-clients), send-mmsg, and receive-mmsg are not required.
+# Scenarios testing lidi-send need from-tcp; those testing lidi-receive need to-tcp.
+#
 Feature: Configuration parsing (TOML, CLI, defaults, error handling)
 
   Scenario: Full configuration via TOML file (no CLI overrides)

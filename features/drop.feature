@@ -1,3 +1,13 @@
+# Required Cargo features:
+#   lidi-send:    command-line, from-tcp, send-mmsg
+#   lidi-receive: command-line, to-tcp, receive-mmsg
+#   lidi-clients: tcp
+#
+# The "Blocks fail to decode when drop rate exceeds repair capacity" scenario
+# also requires:
+#   lidi-send:    prometheus
+#   lidi-receive: prometheus
+#
 Feature: Send simple files with network drop
   
   Scenario: Send a 100K file with drop

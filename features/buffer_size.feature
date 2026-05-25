@@ -1,3 +1,8 @@
+# Required Cargo features:
+#   lidi-send:    command-line, from-tcp, send-mmsg
+#   lidi-receive: command-line, to-tcp, receive-mmsg
+#   lidi-clients: tcp
+#
 Feature: Test --buffer-size option with various values
 
   Scenario Outline: Send file with different buffer sizes

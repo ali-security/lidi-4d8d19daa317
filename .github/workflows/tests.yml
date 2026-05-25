@@ -11,6 +11,22 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  test-features:
+    name: Run build check for all features
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Update rust
+        run: rustup update
+
+      - name: Install cargo hack
+        run: cargo install cargo-hack
+
+      - name: Build all features
+        run: cargo hack check --each-feature --no-dev-deps
+
   tests:
     name: Run tests
     runs-on: ubuntu-latest

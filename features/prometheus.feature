@@ -1,3 +1,8 @@
+# Required Cargo features:
+#   lidi-send:    command-line, from-tcp, send-mmsg, prometheus
+#   lidi-receive: command-line, to-tcp, receive-mmsg, prometheus
+#   lidi-clients: tcp
+#
 Feature: Prometheus metrics (lidi-send / lidi-receive)
 
   Prometheus metrics expose the internal state and performance of lidi

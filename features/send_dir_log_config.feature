@@ -1,3 +1,10 @@
+# Required Cargo features:
+#   lidi-send:    command-line, from-tcp, send-mmsg
+#   lidi-receive: command-line, to-tcp, receive-mmsg
+#   lidi-clients: tcp, inotify, log4rs
+#
+# Both inotify (for --watch) and log4rs must be compiled into lidi-clients.
+#
 Feature: Test --log-config option with lidi-dir-send logging
 
   Scenario: Start lidi-dir-send without --log-config (use log-level default)

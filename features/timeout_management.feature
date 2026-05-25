@@ -1,3 +1,8 @@
+# Required Cargo features:
+#   lidi-send:    command-line, from-tcp, send-mmsg
+#   lidi-receive: command-line, to-tcp, receive-mmsg
+#   lidi-clients: tcp
+#
 Feature: Timeout management (reset_timeout, abort_timeout)
 
   Scenario: reset_timeout configuration accepted and normal transfer succeeds (T9.1, T9.2, T9.6)

@@ -1,3 +1,12 @@
+# Required Cargo features:
+#   lidi-send:    command-line, from-tcp, send-mmsg
+#   lidi-receive: command-line, to-tcp, receive-mmsg
+#   lidi-clients: tcp
+#
+# The last scenario ("Network blackout causes partial blocks to fail decoding") also requires:
+#   lidi-send:    prometheus
+#   lidi-receive: prometheus
+#
 Feature: Send simple files with network interrupts
 
   Scenario: Send 3x100KB file with network interrupt, 2 first files lost, last one transmitted

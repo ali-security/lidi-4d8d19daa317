@@ -1,3 +1,12 @@
+# Required Cargo features:
+#   lidi-send:    command-line, from-tcp, send-mmsg, heartbeat
+#   lidi-receive: command-line, to-tcp, receive-mmsg, heartbeat
+#   lidi-clients: tcp
+#
+# The Heartbeat missed counter scenario additionally requires:
+#   lidi-send:    prometheus
+#   lidi-receive: prometheus
+#
 Feature: Heartbeat mechanism
 
   Scenario: Missed heartbeat produces a log warning (T6.3)

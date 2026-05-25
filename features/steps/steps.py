@@ -149,6 +149,7 @@ def step_impl(context):
     time.sleep(5)
     start_lidi_receive(context)
 
+@given('lidi-send is restarted')
 @when('lidi-send is restarted')
 def step_impl(context):
     stop_lidi_send(context)
@@ -2239,56 +2240,70 @@ def step_verify_receiver_prometheus_counter_gte(context, metric, value):
 
 @then('the sender Prometheus gauge {metric} is greater than or equal to {value:d}')
 def step_verify_sender_prometheus_gauge_gte(context, metric, value):
-    """Verify that a sender Prometheus gauge has a value >= the expected amount."""
+    """Verify that a sender Prometheus gauge has a value >= the expected amount.
+
+    Polls for up to 5 seconds (every 0.5 s) to account for the 1-second metrics_loop
+    lag in lidi-send (lib.rs:183): the gauge may take time to reach the expected value
+    due to real-time aspects of queue filling and metrics updates.
+    """
     import urllib.request
 
     url = 'http://127.0.0.1:9001/metrics'
-    try:
-        response = urllib.request.urlopen(url, timeout=2)
-        content = response.read().decode('utf-8')
+    deadline = time.time() + 5.0
+    last_error = f"Metric {metric} not found in Prometheus sender endpoint"
 
-        # Parse the metric value from Prometheus text format
-        found = False
-        for line in content.split('\n'):
-            if line.startswith(metric) and not line.startswith('#'):
-                parts = line.split()
-                if len(parts) >= 2:
-                    metric_value = int(float(parts[-1]))
-                    found = True
-                    assert metric_value >= value, \
-                        f"Expected {metric} >= {value}, got {metric_value}"
+    while time.time() < deadline:
+        try:
+            response = urllib.request.urlopen(url, timeout=2)
+            content = response.read().decode('utf-8')
+            for line in content.split('\n'):
+                if line.startswith(metric) and not line.startswith('#'):
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        metric_value = int(float(parts[-1]))
+                        if metric_value >= value:
+                            return  # condition met
+                        last_error = f"Expected {metric} >= {value}, got {metric_value}"
                     break
+        except Exception as e:
+            last_error = str(e)
+        time.sleep(0.5)
 
-        assert found, f"Metric {metric} not found in Prometheus sender endpoint"
-    except Exception as e:
-        raise AssertionError(f"Failed to verify sender gauge {metric}: {e}")
+    raise AssertionError(f"Failed to verify sender gauge {metric} after 5 s: {last_error}")
 
 
 @then('the receiver Prometheus gauge {metric} is greater than or equal to {value:d}')
 def step_verify_receiver_prometheus_gauge_gte(context, metric, value):
-    """Verify that a receiver Prometheus gauge has a value >= the expected amount."""
+    """Verify that a receiver Prometheus gauge has a value >= the expected amount.
+
+    Polls for up to 5 seconds (every 0.5 s) to account for the 1-second metrics_loop
+    lag in lidi-receive: the gauge may take time to reach the expected value due to
+    real-time aspects of queue filling and metrics updates.
+    """
     import urllib.request
 
     url = 'http://127.0.0.1:9002/metrics'
-    try:
-        response = urllib.request.urlopen(url, timeout=2)
-        content = response.read().decode('utf-8')
+    deadline = time.time() + 5.0
+    last_error = f"Metric {metric} not found in Prometheus receiver endpoint"
 
-        # Parse the metric value from Prometheus text format
-        found = False
-        for line in content.split('\n'):
-            if line.startswith(metric) and not line.startswith('#'):
-                parts = line.split()
-                if len(parts) >= 2:
-                    metric_value = int(float(parts[-1]))
-                    found = True
-                    assert metric_value >= value, \
-                        f"Expected {metric} >= {value}, got {metric_value}"
+    while time.time() < deadline:
+        try:
+            response = urllib.request.urlopen(url, timeout=2)
+            content = response.read().decode('utf-8')
+            for line in content.split('\n'):
+                if line.startswith(metric) and not line.startswith('#'):
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        metric_value = int(float(parts[-1]))
+                        if metric_value >= value:
+                            return  # condition met
+                        last_error = f"Expected {metric} >= {value}, got {metric_value}"
                     break
+        except Exception as e:
+            last_error = str(e)
+        time.sleep(0.5)
 
-        assert found, f"Metric {metric} not found in Prometheus receiver endpoint"
-    except Exception as e:
-        raise AssertionError(f"Failed to verify receiver gauge {metric}: {e}")
+    raise AssertionError(f"Failed to verify receiver gauge {metric} after 5 s: {last_error}")
 
 
 @then('the receiver Prometheus histogram {metric} is present')
@@ -2347,29 +2362,36 @@ def step_verify_receiver_prometheus_histogram_count_sum(context, metric):
 
 @then('the sender Prometheus gauge {metric} is less than or equal to {value:d}')
 def step_verify_sender_prometheus_gauge_lte(context, metric, value):
-    """Verify that a sender Prometheus gauge has a value <= the expected amount."""
+    """Verify that a sender Prometheus gauge has a value <= the expected amount.
+
+    Polls for up to 5 seconds (every 0.5 s) to account for the 1-second metrics_loop
+    lag in lidi-send (lib.rs:183): the gauge may still show the in-transfer value for
+    up to 1 second after the channel drains to 0.
+    """
     import urllib.request
 
     url = 'http://127.0.0.1:9001/metrics'
-    try:
-        response = urllib.request.urlopen(url, timeout=2)
-        content = response.read().decode('utf-8')
+    deadline = time.time() + 5.0
+    last_error = f"Metric {metric} not found in Prometheus sender endpoint"
 
-        # Parse the metric value from Prometheus text format
-        found = False
-        for line in content.split('\n'):
-            if line.startswith(metric) and not line.startswith('#'):
-                parts = line.split()
-                if len(parts) >= 2:
-                    metric_value = int(float(parts[-1]))
-                    found = True
-                    assert metric_value <= value, \
-                        f"Expected {metric} <= {value}, got {metric_value}"
+    while time.time() < deadline:
+        try:
+            response = urllib.request.urlopen(url, timeout=2)
+            content = response.read().decode('utf-8')
+            for line in content.split('\n'):
+                if line.startswith(metric) and not line.startswith('#'):
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        metric_value = int(float(parts[-1]))
+                        if metric_value <= value:
+                            return  # condition met
+                        last_error = f"Expected {metric} <= {value}, got {metric_value}"
                     break
+        except Exception as e:
+            last_error = str(e)
+        time.sleep(0.5)
 
-        assert found, f"Metric {metric} not found in Prometheus sender endpoint"
-    except Exception as e:
-        raise AssertionError(f"Failed to verify sender gauge {metric}: {e}")
+    raise AssertionError(f"Failed to verify sender gauge {metric} after 5 s: {last_error}")
 
 
 @then('the receiver Prometheus gauge {metric} is less than or equal to {value:d}')
@@ -2695,5 +2717,125 @@ def step_assert_memory_growth_during_pause(context, mb):
         f"lidi-receive RSS grew by {growth:.1f} MB during thread starvation "
         f"(expected ≥ {mb} MB to demonstrate bug). "
         f"The upstream queue (lib.rs:280-283) is crossbeam_channel::unbounded(). "
+        f"If memory did not grow enough, starvation or stress may be insufficient."
+    )
+
+
+# ---------------------------------------------------------------------------
+# lidi-send thread-starvation steps (pipeline queue tests T-SS4..T-SS4b)
+# ---------------------------------------------------------------------------
+
+def _read_sender_prometheus_gauge(metric_name):
+    """Read a single gauge value from lidi-send's Prometheus endpoint."""
+    import urllib.request
+    url = 'http://127.0.0.1:9001/metrics'
+    try:
+        response = urllib.request.urlopen(url, timeout=2)
+        for line in response.read().decode('utf-8').split('\n'):
+            if line.startswith(metric_name) and not line.startswith('#'):
+                parts = line.split()
+                if len(parts) >= 2:
+                    return int(float(parts[-1]))
+    except Exception:
+        pass
+    return 0
+
+
+_SEND_PIPELINE_GAUGES = ['lidi_send_udp_queue_len']
+
+
+@given('udp_queue_size is configured to {size}')
+def step_configure_udp_queue_size(context, size):
+    """Configure the to_udp pipeline queue size (0 = unbounded).
+
+    Requires udp_queue_size support in lidi-send (lib.rs:204).
+    """
+    context.udp_queue_size = int(size)
+
+
+@when('lidi-send {thread_name} thread is paused for {seconds:d} seconds')
+def step_pause_sender_named_thread(context, thread_name, seconds):
+    """Starve one named lidi-send thread via taskset + chrt + CPU hog.
+
+    The target thread is pinned to CPU 0 and set to SCHED_IDLE while a
+    CPU hog occupies CPU 0 at SCHED_OTHER, so the thread cannot run.
+    All other threads continue normally on the remaining CPUs.
+
+    During the pause two things are tracked in context:
+      sender_thread_pause_max_gauges   – dict metric_name -> peak value seen
+      sender_thread_pause_memory_peak_mb / sender_thread_pause_memory_start_mb
+    """
+    pid = context.proc_lidi_send.pid
+    tid = find_thread_tid(pid, thread_name)
+    assert tid is not None, (
+        f"Thread '{thread_name}' not found in lidi-send (PID {pid}). "
+        f"Known names: send_5000, client_0, client_1, …"
+    )
+
+    context.sender_thread_pause_max_gauges = {}
+    context.sender_thread_pause_memory_start_mb = get_process_memory_mb(pid) or 0
+    context.sender_thread_pause_memory_peak_mb = context.sender_thread_pause_memory_start_mb
+    done = threading.Event()
+
+    def _monitor():
+        while not done.is_set():
+            for m in _SEND_PIPELINE_GAUGES:
+                v = _read_sender_prometheus_gauge(m)
+                if v > context.sender_thread_pause_max_gauges.get(m, 0):
+                    context.sender_thread_pause_max_gauges[m] = v
+            mem = get_process_memory_mb(pid)
+            if mem and mem > context.sender_thread_pause_memory_peak_mb:
+                context.sender_thread_pause_memory_peak_mb = mem
+            time.sleep(0.2)
+
+    def _starve():
+        starve_thread_via_cpu_pinning(pid, tid, seconds)
+        done.set()
+
+    starve_t = threading.Thread(target=_starve, daemon=True)
+    monitor_t = threading.Thread(target=_monitor, daemon=True)
+
+    starve_t.start()
+    time.sleep(1.5)
+    monitor_t.start()
+
+    starve_t.join(timeout=seconds + 30)
+    done.set()
+    monitor_t.join(timeout=5)
+
+
+@then('sender memory did not grow by more than {mb:d} MB during thread pause')
+def step_assert_sender_memory_no_growth(context, mb):
+    """Assert that lidi-send RSS did not grow by more than mb MB during pause.
+
+    Used for to_udp (Issue 1, lib.rs:204) with udp_queue_size > 0.
+    When send_5000 is starved, client threads block on to_udp.send() once the
+    bounded queue is full; memory growth is capped.
+    """
+    start = getattr(context, 'sender_thread_pause_memory_start_mb', 0) or 0
+    peak = getattr(context, 'sender_thread_pause_memory_peak_mb', 0) or 0
+    growth = peak - start
+    assert growth <= mb, (
+        f"lidi-send RSS grew by {growth:.1f} MB during thread starvation "
+        f"(expected ≤ {mb} MB). "
+        f"The to_udp queue (lib.rs:204) may be unbounded — check udp_queue_size."
+    )
+
+
+@then('sender memory grew by more than {mb:d} MB during thread pause')
+def step_assert_sender_memory_growth(context, mb):
+    """Assert that lidi-send RSS grew by MORE than mb MB during pause.
+
+    TDD test: demonstrates the unbounded to_udp bug (lib.rs:204).
+    When send_5000 is starved and udp_queue_size=0 (unbounded), client threads
+    keep producing blocks that accumulate in to_udp without limit.
+    """
+    start = getattr(context, 'sender_thread_pause_memory_start_mb', 0) or 0
+    peak = getattr(context, 'sender_thread_pause_memory_peak_mb', 0) or 0
+    growth = peak - start
+    assert growth >= mb, (
+        f"lidi-send RSS grew by {growth:.1f} MB during thread starvation "
+        f"(expected ≥ {mb} MB to demonstrate bug). "
+        f"The to_udp queue (lib.rs:204) must be unbounded (udp_queue_size=0). "
         f"If memory did not grow enough, starvation or stress may be insufficient."
     )

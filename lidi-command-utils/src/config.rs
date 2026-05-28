@@ -69,7 +69,7 @@ impl fmt::Display for Mode {
     }
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, Debug)]
 pub struct EndpointOptions {
     pub flush: bool,
     pub hash: bool,
@@ -107,7 +107,7 @@ impl FromStr for EndpointOptions {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Endpoint {
     Tcp {
         address: net::SocketAddr,

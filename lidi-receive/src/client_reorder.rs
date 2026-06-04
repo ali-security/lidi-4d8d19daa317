@@ -32,12 +32,16 @@ where
         None
     };
 
+    #[cfg(feature = "prometheus")]
+    let gauge_parked = metrics::gauge!(format!("lidi_client_{thread_number}_parked_size"));
+    #[cfg(feature = "prometheus")]
+    let gauge_queue = metrics::gauge!(format!("lidi_client_{thread_number}_queue_len"));
+
     loop {
         let block = if let Some(block) = parked.remove(&expected_sequence_number) {
             #[cfg(feature = "prometheus")]
             #[allow(clippy::cast_precision_loss)]
-            metrics::gauge!(format!("lidi_client_{thread_number}_parked_size"))
-                .set(parked.len() as f64);
+            gauge_parked.set(parked.len() as f64);
             if parked.len() < parked.capacity() / 2 {
                 parked.shrink_to_fit();
             }
@@ -50,7 +54,7 @@ where
 
         #[cfg(feature = "prometheus")]
         #[allow(clippy::cast_precision_loss)]
-        metrics::gauge!(format!("lidi_client_{thread_number}_queue_len")).set(recvq.len() as f64);
+        gauge_queue.set(recvq.len() as f64);
 
         let sequence_number = block.sequence_number();
 

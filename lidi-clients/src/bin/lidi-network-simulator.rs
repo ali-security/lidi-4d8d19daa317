@@ -189,7 +189,7 @@ impl MaxBandwidth {
         self.previous_elapsed = elapsed;
 
         // add tokens in the bucket
-        self.current_tokens += self.refresh_rate * diff;
+        self.current_tokens = self.refresh_rate.mul_add(diff, self.current_tokens);
 
         // max the bucket
         if self.current_tokens > self.max_tokens {

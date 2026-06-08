@@ -20,7 +20,7 @@ Feature: Test ability of lidi to restart properly by itself
   
   Scenario: Send 3x100MB file with lidi-send restarts during transfer, first and last files transmitted
     Given there is a limited network bandwidth of 100 Mb/s
-    And lidi is started with max throughput of 90mbit
+    And lidi is started with max throughput of 50mbit
     When lidi-file-send file A of size 100MB
     And lidi-send restarts while lidi-file-send file B of size 100MB
     And lidi-file-send file C of size 100MB
@@ -29,7 +29,7 @@ Feature: Test ability of lidi to restart properly by itself
 
   Scenario: Send 3x100MB file with lidi-receive restarts during transfer, first and last files transmitted
     Given there is a limited network bandwidth of 100 Mb/s
-    And lidi is started with max throughput of 90mbit
+    And lidi is started with max throughput of 50mbit
     When lidi-file-send file A of size 100MB
     And lidi-receive restarts while lidi-file-send file B of size 100MB
     And lidi-file-send file C of size 100MB

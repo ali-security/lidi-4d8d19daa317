@@ -26,7 +26,7 @@ where
 
         let client_res = client::start(sender, endpoint_id, endpoint_options, client_id, client);
 
-        if let Err(e) = client_res {
+        if let Err((sequence_number, e)) = client_res {
             log::error!("client {client_id:x}: error: {e}");
 
             if let Err(e) = sender.to_udp.send(Some(protocol::Block::new(
@@ -34,7 +34,7 @@ where
                 protocol::BlockType::Abort,
                 &sender.raptorq,
                 client_id,
-                0,
+                sequence_number,
                 None,
             )?)) {
                 log::error!("client {client_id:x}: failed to abort : {e}");

@@ -44,6 +44,9 @@ pub fn start<ClientNew, ClientEnd>(
         let Some(block) = block else {
             // Synchonization has been lost
             // Marking all active transfers as failed
+
+            pending_start.clear();
+
             let actives = receiver.active_transfers.clone();
             for (client_id, client_sendq) in actives {
                 let block = protocol::Block::new(
@@ -62,6 +65,7 @@ pub fn start<ClientNew, ClientEnd>(
                 }
             }
             receiver.active_transfers.clear();
+
             continue;
         };
 

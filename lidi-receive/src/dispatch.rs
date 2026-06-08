@@ -2,9 +2,9 @@
 //! blocks to clients
 
 use lidi_protocol as protocol;
-use std::thread;
 #[cfg(feature = "heartbeat")]
 use std::time;
+use std::{collections, thread};
 
 #[allow(clippy::too_many_lines)]
 pub fn start<ClientNew, ClientEnd>(
@@ -18,6 +18,8 @@ pub fn start<ClientNew, ClientEnd>(
         // for the heartbeat block to arrive
         hb.mul_f32(1.25)
     });
+
+    let mut pending_start = collections::HashMap::new();
 
     loop {
         #[cfg(not(feature = "heartbeat"))]
@@ -42,7 +44,8 @@ pub fn start<ClientNew, ClientEnd>(
         let Some(block) = block else {
             // Synchonization has been lost
             // Marking all active transfers as failed
-            for (client_id, client_sendq) in receiver.active_transfers.write().unwrap().drain() {
+            let actives = receiver.active_transfers.clone();
+            for (client_id, client_sendq) in actives {
                 let block = protocol::Block::new(
                     None,
                     protocol::BlockType::Abort,
@@ -58,6 +61,7 @@ pub fn start<ClientNew, ClientEnd>(
                     log::error!("failed to send payload to client {client_id:x}: {e}");
                 }
             }
+            receiver.active_transfers.clear();
             continue;
         };
 
@@ -80,65 +84,81 @@ pub fn start<ClientNew, ClientEnd>(
                     log::debug!("heartbeat received");
                     last_heartbeat = time::Instant::now();
                 }
-                continue;
             }
+
             protocol::BlockType::Start => {
                 let payload = block.payload();
+
                 match protocol::EndpointId::deserialize(payload) {
                     None => {
                         log::error!("client {client_id:x} for invalid endpoint");
                     }
                     Some(endpoint_id) => {
-                        let (client_sendq, client_recvq) = if 0 < receiver.config.queue_size {
-                            crossbeam_channel::bounded(receiver.config.queue_size)
-                        } else {
-                            crossbeam_channel::unbounded()
-                        };
+                        let (client_sendq, client_recvq) =
+                            pending_start.remove(&client_id).unwrap_or_else(|| {
+                                if 0 < receiver.config.queue_size {
+                                    crossbeam_channel::bounded(receiver.config.queue_size)
+                                } else {
+                                    crossbeam_channel::unbounded()
+                                }
+                            });
+
                         receiver
                             .active_transfers
-                            .write()
-                            .unwrap()
-                            .insert(client_id, client_sendq);
+                            .entry(client_id)
+                            .insert(client_sendq);
+
                         receiver
                             .to_clients
                             .send((endpoint_id, client_id, client_recvq))?;
                     }
                 }
-                continue;
             }
-            protocol::BlockType::Abort | protocol::BlockType::End | protocol::BlockType::Data => (),
-        }
 
-        let remove = receiver
-            .active_transfers
-            .read()
-            .unwrap()
-            .get(&client_id)
-            .map_or_else(
-                || {
-                    #[cfg(feature = "prometheus")]
-                    metrics::counter!("lidi_receive_blocks_for_inactive_client").increment(1);
-                    log::debug!("receive data for inactive transfer {client_id:x}");
-                    false
-                },
-                |client_sendq| {
-                    client_sendq
-                        .try_send(block)
-                        .inspect_err(|e| {
+            protocol::BlockType::Data | protocol::BlockType::Abort | protocol::BlockType::End => {
+                match receiver.active_transfers.entry(client_id) {
+                    dashmap::Entry::Occupied(oe) => {
+                        if let Err(e) = oe.get().try_send(block) {
                             #[cfg(feature = "prometheus")]
                             metrics::counter!("lidi_receive_client_queue_full").increment(1);
                             log::error!("failed to send block to client {client_id:x}: {e}");
-                        })
-                        .is_err()
-                },
-            );
+                            oe.remove();
+                        }
+                    }
+                    dashmap::Entry::Vacant(_) => match pending_start.entry(client_id) {
+                        collections::hash_map::Entry::Occupied(oe) => {
+                            if let Err(e) = oe.get().0.try_send(block) {
+                                #[cfg(feature = "prometheus")]
+                                metrics::counter!("lidi_receive_client_queue_full").increment(1);
+                                log::error!("failed to send block to client {client_id:x}: {e}");
+                                oe.remove();
+                            }
+                        }
+                        collections::hash_map::Entry::Vacant(ve) => {
+                            let (client_sendq, client_recvq) = if 0 < receiver.config.queue_size {
+                                crossbeam_channel::bounded(receiver.config.queue_size)
+                            } else {
+                                crossbeam_channel::unbounded()
+                            };
 
-        if remove {
-            receiver
-                .active_transfers
-                .write()
-                .unwrap()
-                .remove(&client_id);
+                            if client_sendq
+                                .try_send(block)
+                                .inspect_err(|e| {
+                                    #[cfg(feature = "prometheus")]
+                                    metrics::counter!("lidi_receive_client_queue_full")
+                                        .increment(1);
+                                    log::error!(
+                                        "failed to send block to client {client_id:x}: {e}"
+                                    );
+                                })
+                                .is_ok()
+                            {
+                                ve.insert((client_sendq, client_recvq));
+                            }
+                        }
+                    },
+                }
+            }
         }
 
         thread::yield_now();

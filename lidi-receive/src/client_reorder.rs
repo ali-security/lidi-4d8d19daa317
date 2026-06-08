@@ -58,7 +58,12 @@ where
 
         let sequence_number = block.sequence_number();
 
+        log::trace!("client {client_id:x}: receiving block with sequence number {sequence_number}");
+
         if sequence_number != expected_sequence_number {
+            log::trace!(
+                "client {client_id:x}: parking block (sequence number {sequence_number} != {expected_sequence_number})"
+            );
             if parked.insert(sequence_number, block).is_some() {
                 return Err(crate::Error::Internal(format!(
                     "duplicate sequence number {sequence_number}"

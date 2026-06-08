@@ -12,6 +12,11 @@ version = "0"
 default-features = false
 features = [ "std" ]
 
+[dependencies.dashmap]
+version = "6"
+default-features = false
+features = [ ]
+
 [dependencies.libc]
 version = "0"
 default-features = false

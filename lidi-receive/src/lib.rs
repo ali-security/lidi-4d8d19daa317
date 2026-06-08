@@ -21,12 +21,11 @@ use lidi_command_utils::config;
 use lidi_command_utils::tls;
 use lidi_protocol as protocol;
 use std::{
-    collections::{self, HashMap},
     fmt,
     io::{self, Write},
     net,
     os::fd::AsRawFd,
-    sync, thread, time,
+    thread, time,
 };
 
 mod client;
@@ -227,7 +226,7 @@ pub struct Receiver<ClientNew, ClientEnd> {
         crossbeam_channel::Receiver<protocol::Block>,
     )>,
     active_transfers:
-        sync::RwLock<HashMap<protocol::ClientId, crossbeam_channel::Sender<protocol::Block>>>,
+        dashmap::DashMap<protocol::ClientId, crossbeam_channel::Sender<protocol::Block>>,
     client_new: ClientNew,
     client_end: ClientEnd,
 }
@@ -269,7 +268,7 @@ where
             for_dispatch,
             to_clients,
             for_clients,
-            active_transfers: sync::RwLock::new(collections::HashMap::new()),
+            active_transfers: dashmap::DashMap::new(),
             client_new,
             client_end,
         })

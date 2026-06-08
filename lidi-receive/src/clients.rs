@@ -56,11 +56,7 @@ where
             let _ = for_client;
         });
 
-        receiver
-            .active_transfers
-            .write()
-            .unwrap()
-            .remove(&client_id);
+        receiver.active_transfers.remove(&client_id);
 
         thread::yield_now();
     }

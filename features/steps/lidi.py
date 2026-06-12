@@ -47,7 +47,9 @@ def start_lidi_receive(context):
     )
 
     # Wait enough time for lidi-receive to be ready
-    time.sleep(PROCESS_READY_DELAY)
+    # Valgrind significantly slows startup, so add extra delay
+    delay = PROCESS_READY_DELAY_EXTENDED * 3 if getattr(context, 'valgrind_receive', False) else PROCESS_READY_DELAY
+    time.sleep(delay)
 
     # Check it is running
     poll = context.proc_lidi_receive.poll()
@@ -99,7 +101,9 @@ def start_lidi_send(context):
     context.proc_lidi_send = subprocess.Popen(lidi_send_command)
 
     # Wait enough time for lidi-send to be ready
-    time.sleep(PROCESS_READY_DELAY)
+    # Valgrind significantly slows startup, so add extra delay
+    delay = PROCESS_READY_DELAY_EXTENDED * 3 if getattr(context, 'valgrind_send', False) else PROCESS_READY_DELAY
+    time.sleep(delay)
 
     # Check it is running
     poll = context.proc_lidi_send.poll()
@@ -115,6 +119,26 @@ def stop_lidi_send(context):
     """Stop the lidi send process."""
     if context.proc_lidi_send:
         context.proc_lidi_send.kill()
+
+
+def stop_lidi_graceful(process, timeout=60):
+    """Send SIGTERM and wait for the process to exit; fall back to SIGKILL on timeout.
+
+    Used with Valgrind so it has time to finish writing its memcheck report before
+    the caller reads the exit code.  Returns the exit code, or None if the process
+    was already dead or not started.
+    """
+    if process is None:
+        return None
+    if process.poll() is not None:
+        return process.returncode
+    process.terminate()
+    try:
+        process.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait()
+    return process.returncode
 
 def start_diode(context):
     """Start the complete lidi system with network simulation if needed."""

@@ -1,6 +1,16 @@
 from contextlib import contextmanager
 import os
 
+VALGRIND_CMD = [
+    'valgrind',
+    '--tool=memcheck',
+    '--leak-check=full',
+    '--show-leak-kinds=all',
+    '--errors-for-leak-kinds=definite,indirect',
+    '--track-origins=yes',
+    '--error-exitcode=1',
+]
+
 def build_lidi_config(context, udp_port, log_config, side='both'):
     """Build LIDI configuration string based on context and parameters.
 
@@ -108,6 +118,11 @@ def build_lidi_send_command(context):
 
     lidi_send_command = [f'{context.bin_dir}/lidi-send', lidi_config]
 
+    if getattr(context, 'valgrind_send', False):
+        valgrind_log = os.path.join(context.base_dir, 'valgrind_send.log')
+        context.valgrind_send_log = valgrind_log
+        lidi_send_command = VALGRIND_CMD + [f'--log-file={valgrind_log}'] + lidi_send_command
+
     return lidi_send_command
 
 def build_lidi_receive_command(context):
@@ -138,6 +153,11 @@ def build_lidi_receive_command(context):
             delattr(context, 'heartbeat')
 
     lidi_receive_command = [f'{context.bin_dir}/lidi-receive', lidi_config]
+
+    if getattr(context, 'valgrind_receive', False):
+        valgrind_log = os.path.join(context.base_dir, 'valgrind_receive.log')
+        context.valgrind_receive_log = valgrind_log
+        lidi_receive_command = VALGRIND_CMD + [f'--log-file={valgrind_log}'] + lidi_receive_command
 
     return lidi_receive_command
 

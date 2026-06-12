@@ -120,7 +120,7 @@ class UdpServer:
             except OSError:
                 break
 
-from features.steps.lidi import create_file, send_file, send_multiple_files, start_diode, start_lidi_file_receive, start_lidi_receive, start_lidi_send, start_lidi_send_dir, start_lidi_udp_send, start_lidi_udp_receive, start_throttled_diode, start_udp_tunnel_diode, stop_lidi_file_receive, stop_lidi_receive, stop_lidi_send, stop_lidi_udp_send, stop_lidi_udp_receive
+from features.steps.lidi import create_file, send_file, send_multiple_files, start_diode, start_lidi_file_receive, start_lidi_receive, start_lidi_send, start_lidi_send_dir, start_lidi_udp_send, start_lidi_udp_receive, start_throttled_diode, start_udp_tunnel_diode, stop_lidi_file_receive, stop_lidi_graceful, stop_lidi_receive, stop_lidi_send, stop_lidi_udp_send, stop_lidi_udp_receive
 from features.steps.file import create_and_copy_file, create_and_copy_multiple_files, create_and_move_file, parse_human_size, test_file, test_no_file
 from features.steps.config import build_lidi_send_file_command
 
@@ -1528,6 +1528,71 @@ def step_verify_receiver_mode(context, mode):
         if f'receive mode is {mode}' in _read_receiver_daemon_log(context):
             return
     raise Exception(f"Expected 'receive mode is {mode}' not found in receiver log after 10s")
+
+
+# Valgrind memcheck steps
+@given('lidi-send runs under valgrind')
+def step_valgrind_send(context):
+    context.valgrind_send = True
+
+
+@given('lidi-receive runs under valgrind')
+def step_valgrind_receive(context):
+    context.valgrind_receive = True
+
+
+def _check_valgrind_log(log_path):
+    """Check a Valgrind log for errors.
+
+    With --errors-for-leak-kinds=definite,indirect, Valgrind reports
+    only confirmed leaks and memory-safety errors. Returns (has_errors, summary).
+    """
+    if not log_path or not os.path.exists(log_path):
+        return True, "Valgrind log not found"
+
+    with open(log_path) as f:
+        log_content = f.read()
+
+    # Parse ERROR SUMMARY line: "ERROR SUMMARY: N errors from M contexts"
+    for line in log_content.split('\n'):
+        if 'ERROR SUMMARY:' in line:
+            if '0 errors' in line:
+                return False, log_content
+            else:
+                return True, log_content
+
+    # If ERROR SUMMARY not found, log is incomplete (process was killed)
+    return True, f"Valgrind log incomplete (no ERROR SUMMARY found):\n{log_content}"
+
+
+@then('valgrind reports no memory errors on lidi-send')
+def step_check_valgrind_send(context):
+    rc = stop_lidi_graceful(context.proc_lidi_send)
+    context.proc_lidi_send = None
+    time.sleep(0.5)  # Give Valgrind time to write the log
+
+    log_path = getattr(context, 'valgrind_send_log', None)
+    has_errors, log_content = _check_valgrind_log(log_path)
+
+    if has_errors:
+        raise AssertionError(
+            f"Valgrind detected errors in lidi-send.\n{log_content}"
+        )
+
+
+@then('valgrind reports no memory errors on lidi-receive')
+def step_check_valgrind_receive(context):
+    rc = stop_lidi_graceful(context.proc_lidi_receive)
+    context.proc_lidi_receive = None
+    time.sleep(0.5)  # Give Valgrind time to write the log
+
+    log_path = getattr(context, 'valgrind_receive_log', None)
+    has_errors, log_content = _check_valgrind_log(log_path)
+
+    if has_errors:
+        raise AssertionError(
+            f"Valgrind detected errors in lidi-receive.\n{log_content}"
+        )
 
 
 # Configuration parsing tests

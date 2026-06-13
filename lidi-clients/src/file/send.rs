@@ -1,6 +1,8 @@
 #[cfg(feature = "tls")]
 use crate::tls;
-use crate::{file, hash};
+use crate::file;
+#[cfg(feature = "hash")]
+use crate::hash;
 #[cfg(feature = "tcp")]
 use std::net;
 #[cfg(feature = "unix")]
@@ -176,6 +178,17 @@ fn send_file_thread(
     }
 }
 
+#[cfg(not(feature = "inotify"))]
+pub fn send_dir(
+    _config: &file::Config<crate::DiodeSend>,
+    _path: &path::Path,
+) -> Result<(), file::Error> {
+    Err(file::Error::Other(String::from(
+        "directory send requires the inotify feature",
+    )))
+}
+
+#[cfg(feature = "inotify")]
 pub fn send_dir(
     config: &file::Config<crate::DiodeSend>,
     path: &path::Path,

@@ -1,5 +1,8 @@
 use std::{fmt, net, path};
 
+#[cfg(not(any(feature = "tcp", feature = "tls", feature = "unix")))]
+compile_error!("at least one of tcp, tls, or unix features must be enabled");
+
 pub mod file;
 #[cfg(feature = "hash")]
 pub(crate) mod hash;

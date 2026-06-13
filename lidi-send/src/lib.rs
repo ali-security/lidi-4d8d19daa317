@@ -18,6 +18,9 @@
 //! - heartbeat worker has been omitted from the representation for readability,
 //! - there are `max_clients` clients workers running in parallel,
 
+#[cfg(not(any(feature = "send-native", feature = "send-msg", feature = "send-mmsg")))]
+compile_error!("at least one of send-native, send-msg, or send-mmsg features must be enabled");
+
 use lidi_command_utils::config;
 #[cfg(feature = "from-tls")]
 use lidi_command_utils::tls;

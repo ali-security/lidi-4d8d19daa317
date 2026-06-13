@@ -16,6 +16,9 @@
 //! - there are `max_clients` clients workers running in parallel,
 //! - there are `nb_decode_threads` decode workers running in parallel.
 
+#[cfg(not(any(feature = "receive-native", feature = "receive-msg", feature = "receive-mmsg")))]
+compile_error!("at least one of receive-native, receive-msg, or receive-mmsg features must be enabled");
+
 use lidi_command_utils::config;
 #[cfg(feature = "to-tls")]
 use lidi_command_utils::tls;

@@ -72,7 +72,7 @@ pub fn start<ClientNew, ClientEnd>(
                 metrics::counter!("lidi_receive_udp_packets").increment(1);
                 let packet = raptorq::EncodingPacket::deserialize(datagram);
                 #[cfg(not(feature = "receive-mmsg"))]
-                receiver.to_reblock.send(packet)?;
+                to_reblock.send(packet)?;
                 #[cfg(feature = "receive-mmsg")]
                 to_reblock.send(vec![packet])?;
             }

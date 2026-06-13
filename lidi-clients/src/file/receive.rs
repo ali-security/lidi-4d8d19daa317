@@ -1,6 +1,8 @@
 #[cfg(feature = "tls")]
 use crate::tls;
-use crate::{file, hash};
+use crate::file;
+#[cfg(feature = "hash")]
+use crate::hash;
 #[cfg(feature = "tcp")]
 use std::net;
 #[cfg(feature = "unix")]

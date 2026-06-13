@@ -7,6 +7,30 @@ import subprocess
 import time
 import threading
 import os
+import ctypes
+import logging
+
+log = logging.getLogger(__name__)
+
+# ptrace constants for per-thread pause (replaces SIGSTOP/SIGCONT)
+_libc = ctypes.CDLL("libc.so.6", use_errno=True)
+_libc.ptrace.restype = ctypes.c_long
+_libc.ptrace.argtypes = [ctypes.c_long, ctypes.c_long, ctypes.c_void_p, ctypes.c_void_p]
+
+PTRACE_SEIZE = 0x4206
+PTRACE_INTERRUPT = 0x4207
+PTRACE_DETACH = 17
+PTRACE_SEIZE_DEFAULT_OPTIONS = 0
+
+def _ptrace(request, tid, addr=0, data=0):
+    """Thin wrapper around libc ptrace(2). Raises OSError on failure."""
+    ctypes.set_errno(0)
+    res = _libc.ptrace(request, tid, ctypes.c_void_p(addr), ctypes.c_void_p(data))
+    if res == -1:
+        errno = ctypes.get_errno()
+        if errno != 0:
+            raise OSError(errno, os.strerror(errno))
+    return res
 
 
 class SlowTcpClient:
@@ -134,45 +158,117 @@ def find_thread_tid(pid, thread_name):
     return None
 
 
-def starve_thread_via_cpu_pinning(pid, tid, duration_seconds):
-    """Starve a specific thread by pinning it to a CPU-saturated core.
+def dump_all_thread_states(pid):
+    """Return {thread_name: state} for every thread in the process.
 
-    Strategy (no ptrace / no root required):
-    1. Pin the target thread to CPU 0 with ``taskset``.
-    2. Set it to SCHED_IDLE (lowest priority) with ``chrt``.
-    3. Spin a CPU hog on CPU 0 at SCHED_OTHER priority.
-    4. With SCHED_IDLE on a fully loaded CPU the thread cannot run.
-    5. Other lidi-receive threads run freely on CPUs 1-N.
-    6. After duration_seconds kill the hog and restore affinity / scheduling.
-
-    While the target thread is starved, queues that feed it fill up.
-    Blocks the caller for approximately duration_seconds.
+    Used to verify that ptrace affects only the target thread,
+    not the whole process.
     """
-    # Save original CPU affinity mask (hex string, e.g. "ffff")
-    result = subprocess.run(['taskset', '-p', str(tid)], capture_output=True, text=True)
-    original_affinity = result.stdout.strip().split()[-1] if result.returncode == 0 else 'ffffffff'
-
-    # Pin target thread to CPU 0 only
-    subprocess.run(['taskset', '-p', '0x1', str(tid)], capture_output=True)
-
-    # Drop to SCHED_IDLE — runs only when CPU has zero demand
-    subprocess.run(['chrt', '-i', '-p', '0', str(tid)], capture_output=True)
-
-    # Keep CPU 0 at 100 % so the SCHED_IDLE thread never gets scheduled
-    hog = subprocess.Popen(
-        ['taskset', '-c', '0', 'dd', 'if=/dev/zero', 'of=/dev/null'],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-
+    task_dir = f'/proc/{pid}/task'
+    result = {}
     try:
-        time.sleep(duration_seconds)
-    finally:
-        hog.terminate()
+        tids = os.listdir(task_dir)
+    except FileNotFoundError:
+        return result
+    for tid in tids:
         try:
-            hog.wait(timeout=3)
-        except subprocess.TimeoutExpired:
-            hog.kill()
-        # Restore normal scheduling and full CPU affinity
-        subprocess.run(['chrt', '-o', '-p', '0', str(tid)], capture_output=True)
-        subprocess.run(['taskset', '-p', original_affinity, str(tid)], capture_output=True)
+            with open(f'{task_dir}/{tid}/comm') as f:
+                name = f.read().strip()
+            with open(f'{task_dir}/{tid}/stat') as f:
+                state = f.read().split()[2]
+            result[f"{name}({tid})"] = state
+        except (FileNotFoundError, PermissionError):
+            continue
+    return result
+
+
+def ptrace_stop_thread(pid, tid, timeout=2.0):
+    """Stop a single thread via ptrace, without affecting any other thread.
+
+    Uses PTRACE_SEIZE + PTRACE_INTERRUPT to stop the target tid.
+    Must be called from the same Python thread that will call ptrace_resume_thread().
+
+    Returns True on success, False if the thread could not be stopped within timeout.
+    """
+    try:
+        _ptrace(PTRACE_SEIZE, tid, 0, PTRACE_SEIZE_DEFAULT_OPTIONS)
+        _ptrace(PTRACE_INTERRUPT, tid, 0, 0)
+    except OSError as e:
+        log.error(f"ptrace SEIZE/INTERRUPT failed: {e}")
+        return False
+
+    WUNTRACED = 0x00000002
+    __WALL = 0x40000000
+    deadline = time.time() + timeout
+
+    while time.time() < deadline:
+        try:
+            pid_ret, status = os.waitpid(tid, WUNTRACED | __WALL)
+            if pid_ret == tid:
+                return True
+        except ChildProcessError:
+            pass
+
+        try:
+            with open(f'/proc/{pid}/task/{tid}/stat') as f:
+                state = f.read().split()[2]
+                if state == 't':
+                    return True
+        except (FileNotFoundError, PermissionError):
+            pass
+
+        time.sleep(0.01)
+
+    return False
+
+
+def ptrace_resume_thread(tid):
+    """Resume and detach a thread stopped with ptrace_stop_thread()."""
+    try:
+        _ptrace(PTRACE_DETACH, tid, 0, 0)
+    except OSError as e:
+        if e.errno != 3:
+            log.warning(f"ptrace DETACH failed (errno={e.errno}): {e}")
+            raise
+
+
+def starve_thread_via_cpu_pinning(pid, tid, duration_seconds):
+    """Pause a SINGLE thread via ptrace (PTRACE_SEIZE/PTRACE_INTERRUPT),
+    leaving all other threads in the process running normally.
+
+    NOTE: function name kept for backward compatibility; it no longer uses CPU pinning.
+    It uses ptrace to achieve true per-thread pause.
+
+    Blocks the caller for approximately duration_seconds while the target tid is paused.
+    """
+    def read_thread_stats():
+        try:
+            with open(f'/proc/{pid}/task/{tid}/stat') as f:
+                parts = f.read().split()
+                return {'state': parts[2]}
+        except Exception:
+            return None
+
+    stats_before = read_thread_stats()
+
+    stopped = ptrace_stop_thread(pid, tid, timeout=2.0)
+
+    if stopped:
+        mid_states = dump_all_thread_states(pid)
+        print(f"\n[DEBUG] All thread states during pause: {mid_states}\n", flush=True)
+        log.info(f"All thread states during pause: {mid_states}")
+
+        time.sleep(duration_seconds)
+
+    ptrace_resume_thread(tid)
+    time.sleep(0.05)
+
+    stats_after = read_thread_stats()
+    if stats_before and stats_after:
+        log.info(f"Thread {tid} state: before={stats_before['state']} after={stats_after['state']}")
+
+    if not stopped:
+        raise RuntimeError(
+            f"ptrace failed to stop thread {tid} within timeout — "
+            f"check CAP_SYS_PTRACE / /proc/sys/kernel/yama/ptrace_scope"
+        )

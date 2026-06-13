@@ -463,6 +463,21 @@ pub struct Receive {
     client_queue_size: Option<usize>,
     #[cfg_attr(
         feature = "command-line",
+        clap(long, help = "Maximum items in to_reblock pipeline queue (0 means unbounded)")
+    )]
+    reblock_queue_size: Option<usize>,
+    #[cfg_attr(
+        feature = "command-line",
+        clap(long, help = "Maximum items in to_dispatch pipeline queue (0 means unbounded)")
+    )]
+    dispatch_queue_size: Option<usize>,
+    #[cfg_attr(
+        feature = "command-line",
+        clap(long, help = "Maximum items in to_clients pipeline queue (0 means unbounded)")
+    )]
+    clients_queue_size: Option<usize>,
+    #[cfg_attr(
+        feature = "command-line",
         clap(
             long,
             help = "Duration in seconds without UDP packets before resetting the internal state of the RaptorQ receiver"
@@ -515,6 +530,21 @@ impl Receive {
     #[must_use]
     pub fn client_queue_size(&self) -> usize {
         self.client_queue_size.unwrap_or(DEFAULT_CLIENT_QUEUE_SIZE)
+    }
+
+    #[must_use]
+    pub fn reblock_queue_size(&self) -> usize {
+        self.reblock_queue_size.unwrap_or(0)
+    }
+
+    #[must_use]
+    pub fn dispatch_queue_size(&self) -> usize {
+        self.dispatch_queue_size.unwrap_or(0)
+    }
+
+    #[must_use]
+    pub fn clients_queue_size(&self) -> usize {
+        self.clients_queue_size.unwrap_or(0)
     }
 
     #[must_use]

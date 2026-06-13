@@ -157,6 +157,10 @@ struct Config {
     abort_timeout: Option<time::Duration>,
     // Per-client block queue size (0 = unbounded). Matches lidi_receive_client_queue_full.
     client_queue_size: usize,
+    // Per-stage pipeline queue sizes (0 = unbounded). Match lidi_receive_*_queue_len metrics.
+    reblock_queue_size: usize,
+    dispatch_queue_size: usize,
+    clients_queue_size: usize,
     mode: config::Mode,
     #[cfg(feature = "prometheus")]
     prometheus_listen: Option<net::SocketAddr>,
@@ -202,6 +206,9 @@ impl From<&config::ReceiveConfig> for Config {
             reset_timeout: config.receive.reset_timeout(),
             abort_timeout: config.receive.abort_timeout(),
             client_queue_size: config.receive.client_queue_size(),
+            reblock_queue_size: config.receive.reblock_queue_size(),
+            dispatch_queue_size: config.receive.dispatch_queue_size(),
+            clients_queue_size: config.receive.clients_queue_size(),
             mode,
             #[cfg(feature = "prometheus")]
             prometheus_listen: config.receive.prometheus_listen(),

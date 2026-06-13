@@ -94,7 +94,7 @@ def before_scenario(context, _feature):
     context.lidi_config_path = context.base_dir
     
     # setup logging configuration
-    setup_log_config(context, context.base_dir)
+    setup_log_config(context, context.log_dir)
 
 # function called after every test : cleanup (delete temp directories & kill processes)
 def after_scenario(context, _scenario):

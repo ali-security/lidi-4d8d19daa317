@@ -44,3 +44,4 @@ Feature: Test ability of lidi to restart properly by itself
     And lidi-file-receive is restarted
     And lidi-file-send file B of size 100KB
     Then lidi-file-receive file B in 5 seconds
+

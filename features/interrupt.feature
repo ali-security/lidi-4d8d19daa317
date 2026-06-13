@@ -27,3 +27,14 @@ Feature: Send simple files with network interrupts
     And lidi-file-send file C of size 100MB
     Then lidi-file-receive file C in 5 seconds
 
+  @wip
+  Scenario: Network timeout during transfer increments blocks_lost metric
+    Given there is a network interrupt of 100KB after 50KB
+    And there is a limited network bandwidth of 100 Mb/s
+    And lidi is started with max throughput of 90mbit
+    When lidi-file-send file A of size 100KB
+    And lidi-file-send file B of size 100KB
+    And lidi-file-send file C of size 100KB
+    Then lidi-file-receive file C in 5 seconds
+    And the receiver Prometheus counter lidi_receive_blocks_lost is greater than or equal to 1
+

@@ -124,6 +124,11 @@ def step_wait_seconds(context, seconds):
     """Wait for a specified number of seconds."""
     time.sleep(seconds)
 
+@when('wait {seconds:d} seconds')
+def step_wait_seconds_when(context, seconds):
+    """Wait for a specified number of seconds (when variant)."""
+    time.sleep(seconds)
+
 @given('lidi is started')
 def step_impl(context):
     start_diode(context)
@@ -132,6 +137,7 @@ def step_impl(context):
 def step_lidi_send_started(context):
     start_lidi_send(context)
 
+@given('lidi-receive is restarted')
 @when('lidi-receive is restarted')
 def step_impl(context):
     stop_lidi_receive(context)
@@ -196,6 +202,11 @@ def step_set_encoding(context, encoding):
 @given('repair percentage is {repair} %')
 def step_set_encoding(context, repair):
     context.repair = repair
+
+@given('lidi is started with max clients set to {max_clients:d}')
+def step_set_max_clients(context, max_clients):
+    """Set the maximum number of concurrent clients."""
+    context.max_clients = max_clients
 
 @when('lidi-file-send file {name} of size {size} with hash')
 def step_send_file_with_hash(context, name, size):
@@ -1110,7 +1121,7 @@ def step_verify_log_level_present_lidi_file_receive(context, level):
 # Hash-related steps
 
 def _read_receiver_log(context):
-    log_file = os.path.join(context.base_dir, "lidi_receive_file.log")
+    log_file = os.path.join(context.log_dir, "lidi_receive_file.log")
     if not os.path.exists(log_file):
         return ""
     with open(log_file) as f:
@@ -1118,7 +1129,7 @@ def _read_receiver_log(context):
 
 
 def _read_receiver_daemon_log(context):
-    log_file = os.path.join(context.base_dir, "lidi_receive.log")
+    log_file = os.path.join(context.log_dir, "lidi_receive.log")
     if not os.path.exists(log_file):
         return ""
     with open(log_file) as f:
@@ -1169,6 +1180,20 @@ def step_network_blackout_by_duration(context, duration_ms, start_ms):
     context.network_blackout_duration = int(duration_ms)
 
 
+@given('there is a network blackout of {duration:d} seconds after {start:d} seconds')
+def step_network_blackout_by_seconds_plural(context, duration, start):
+    """Configure network blackout based on duration in seconds."""
+    context.network_down_after_duration = int(start) * 1000
+    context.network_blackout_duration = int(duration) * 1000
+
+
+@given('there is a network blackout of {duration:d} seconds after {start:d} second')
+def step_network_blackout_by_seconds_mixed(context, duration, start):
+    """Configure network blackout based on duration in seconds (mixed singular/plural)."""
+    context.network_down_after_duration = int(start) * 1000
+    context.network_blackout_duration = int(duration) * 1000
+
+
 @then('the receiver log contains a missed heartbeat warning')
 def step_receiver_log_has_missed_heartbeat(context):
     """Verify that the receiver daemon log contains a missed heartbeat warning."""
@@ -1209,10 +1234,50 @@ def step_disable_abort_timeout(context):
     context.abort_timeout = 0
 
 
+@given('client_queue_size is configured to {size}')
+def step_configure_client_queue_size(context, size):
+    """Configure the per-client block queue size (0 = unbounded)."""
+    context.client_queue_size = int(size)
+
+
 @given('queue_size is configured to {size}')
-def step_configure_queue_size(context, size):
-    """Configure queue_size limit."""
-    context.queue_size = int(size)
+def step_configure_queue_size_compat(context, size):
+    """Backward-compatible alias for client_queue_size."""
+    context.client_queue_size = int(size)
+
+
+@given('reblock_queue_size is configured to {size}')
+def step_configure_reblock_queue_size(context, size):
+    """Configure the to_reblock pipeline queue size (0 = unbounded)."""
+    context.reblock_queue_size = int(size)
+
+
+@given('decode_queue_size is configured to {size}')
+def step_configure_decode_queue_size(context, size):
+    """Configure the to_decode pipeline queue size (0 = unbounded)."""
+    context.decode_queue_size = int(size)
+
+
+@given('dispatch_queue_size is configured to {size}')
+def step_configure_dispatch_queue_size(context, size):
+    """Configure the to_dispatch pipeline queue size (0 = unbounded)."""
+    context.dispatch_queue_size = int(size)
+
+
+@given('clients_queue_size is configured to {size}')
+def step_configure_clients_queue_size(context, size):
+    """Configure the to_clients pipeline queue size (0 = unbounded)."""
+    context.clients_queue_size = int(size)
+
+
+@when('lidi-send is stopped')
+def step_stop_lidi_send(context):
+    """Stop lidi-send without restarting (simulate dead sender)."""
+    if not hasattr(context, 'proc_lidi_send') or context.proc_lidi_send is None:
+        raise Exception("lidi-send is not running")
+    context.proc_lidi_send.terminate()
+    context.proc_lidi_send.wait(timeout=5)
+    context.proc_lidi_send = None
 
 
 @given('there is a very limited bandwidth of {bandwidth}')
@@ -1254,12 +1319,12 @@ def step_verify_abort_timeout_in_log(context):
     while time.time() < deadline:
         time.sleep(0.5)
         log_content = _read_receiver_daemon_log(context)
-        # Look for abort_timeout related log messages
+        # Look for abort_timeout trigger messages (not startup config messages)
         if any(msg in log_content for msg in [
-            'abort_timeout',
+            'crossbeam receive timeout error',
             'client idle timeout',
             'closing idle client',
-            'client closed due to timeout'
+            'client closed due to timeout',
         ]):
             return
     raise Exception("Expected abort_timeout trigger not found in receiver log after 10 s")
@@ -1271,7 +1336,7 @@ def step_verify_no_abort_timeout_in_log(context):
     time.sleep(2)  # Give logs time to be written
     log_content = _read_receiver_daemon_log(context)
     if any(msg in log_content for msg in [
-        'abort_timeout',
+        'crossbeam receive timeout error',
         'client idle timeout',
         'closing idle client',
         'client closed due to timeout'
@@ -1315,7 +1380,7 @@ def step_verify_receiver_running(context):
 
 
 def _read_sender_daemon_log(context):
-    log_file = os.path.join(context.base_dir, "lidi_send.log")
+    log_file = os.path.join(context.log_dir, "lidi_send.log")
     if not os.path.exists(log_file):
         return ""
     with open(log_file) as f:
@@ -1339,7 +1404,7 @@ def step_configure_lidi_send_raptorq(context, mtu, block_size, repair):
 
 @then('lidi-send reports encoded block {transfer_length:d} bytes, {min_packets:d} base packets and {extra_repair:d} extra repair packets')
 def step_verify_raptorq_log(context, transfer_length, min_packets, extra_repair):
-    log_file = os.path.join(context.base_dir, "lidi_send.log")
+    log_file = os.path.join(context.log_dir, "lidi_send.log")
     content = ""
     deadline = time.time() + 5
     while time.time() < deadline:
@@ -1984,3 +2049,348 @@ def step_verify_udp_send_not_crashed(context):
     poll = context.proc_lidi_udp_send.poll()
     assert poll is None, \
         f"lidi-udp-send crashed with exit code {poll}"
+
+# Prometheus metrics tests
+@given('lidi is started with Prometheus enabled')
+def step_start_lidi_with_prometheus(context):
+    """Start lidi with Prometheus metrics enabled."""
+    # Configure Prometheus endpoints
+    # lidi-send: 9001, lidi-receive: 9002
+    start_diode(context)
+
+
+@given('lidi is started without Prometheus')
+def step_start_lidi_without_prometheus(context):
+    """Start lidi without Prometheus metrics (default)."""
+    # Default is no Prometheus, so just start normally
+    start_diode(context)
+
+
+@then('the Prometheus endpoint on {port:d} responds with metrics')
+def step_verify_prometheus_endpoint_reachable(context, port):
+    """Verify that Prometheus endpoint on the specified port is reachable and has metrics."""
+    import urllib.request
+    import urllib.error
+    
+    url = f'http://127.0.0.1:{port}/metrics'
+    try:
+        response = urllib.request.urlopen(url, timeout=2)
+        content = response.read().decode('utf-8')
+        
+        # Verify it's a valid Prometheus response (contains TYPE and HELP)
+        assert 'TYPE' in content or 'HELP' in content or 'lidi_' in content, \
+            f"Prometheus endpoint {url} returned invalid metrics: {content[:200]}"
+        
+        
+    except urllib.error.URLError as e:
+        raise AssertionError(f"Prometheus endpoint {url} is unreachable: {e}")
+
+
+@then('the Prometheus endpoint on {port:d} is unreachable')
+def step_verify_prometheus_endpoint_unreachable(context, port):
+    """Verify that Prometheus endpoint on the specified port is unreachable."""
+    import urllib.request
+    import urllib.error
+    
+    url = f'http://127.0.0.1:{port}/metrics'
+    try:
+        response = urllib.request.urlopen(url, timeout=2)
+        raise AssertionError(f"Prometheus endpoint {url} should be unreachable but responded")
+    except (urllib.error.URLError, TimeoutError):
+        # Expected - endpoint should be unreachable
+        pass
+
+
+@then('the sender Prometheus counter {metric} is greater than {value:d}')
+def step_verify_sender_prometheus_counter(context, metric, value):
+    """Verify that a sender Prometheus counter has a value greater than the expected amount."""
+    import urllib.request
+
+    url = 'http://127.0.0.1:9001/metrics'
+    try:
+        response = urllib.request.urlopen(url, timeout=2)
+        content = response.read().decode('utf-8')
+
+        # Parse the metric value from Prometheus text format
+        # Format: metric_name{labels} value
+        found = False
+        for line in content.split('\n'):
+            if line.startswith(metric) and not line.startswith('#'):
+                parts = line.split()
+                if len(parts) >= 2:
+                    metric_value = int(float(parts[-1]))
+                    found = True
+                    assert metric_value > value, \
+                        f"Expected {metric} > {value}, got {metric_value}"
+                    break
+
+        assert found, f"Metric {metric} not found in Prometheus endpoint"
+    except Exception as e:
+        raise AssertionError(f"Failed to verify sender counter {metric}: {e}")
+
+
+@then('the sender Prometheus counter {metric} is greater than or equal to {value:d}')
+def step_verify_sender_prometheus_counter_gte(context, metric, value):
+    """Verify that a sender Prometheus counter has a value >= the expected amount."""
+    import urllib.request
+
+    url = 'http://127.0.0.1:9001/metrics'
+    try:
+        response = urllib.request.urlopen(url, timeout=2)
+        content = response.read().decode('utf-8')
+
+        # Parse the metric value from Prometheus text format
+        found = False
+        for line in content.split('\n'):
+            if line.startswith(metric) and not line.startswith('#'):
+                parts = line.split()
+                if len(parts) >= 2:
+                    metric_value = int(float(parts[-1]))
+                    found = True
+                    assert metric_value >= value, \
+                        f"Expected {metric} >= {value}, got {metric_value}"
+                    break
+
+        assert found, f"Metric {metric} not found in Prometheus endpoint"
+    except Exception as e:
+        raise AssertionError(f"Failed to verify sender metric {metric}: {e}")
+
+
+@then('the receiver Prometheus counter {metric} is greater than {value:d}')
+def step_verify_receiver_prometheus_counter(context, metric, value):
+    """Verify that a receiver Prometheus counter has a value greater than the expected amount."""
+    import urllib.request
+    
+    url = 'http://127.0.0.1:9002/metrics'
+    try:
+        response = urllib.request.urlopen(url, timeout=2)
+        content = response.read().decode('utf-8')
+        
+        # Parse the metric value from Prometheus text format
+        found = False
+        for line in content.split('\n'):
+            if line.startswith(metric) and not line.startswith('#'):
+                parts = line.split()
+                if len(parts) >= 2:
+                    metric_value = int(float(parts[-1]))
+                    found = True
+                    assert metric_value > value, \
+                        f"Expected {metric} > {value}, got {metric_value}"
+                    break
+        
+        assert found, f"Metric {metric} not found in Prometheus receiver endpoint"
+    except Exception as e:
+        raise AssertionError(f"Failed to verify receiver metric {metric}: {e}")
+
+
+@given('network packet loss rate is {loss_rate:d}%')
+def step_configure_network_packet_loss(context, loss_rate):
+    """Configure network packet loss rate."""
+    context.network_drop = loss_rate
+
+# Helper steps for simpler test scenarios
+@when('a file A of {size} is sent')
+def step_send_file_a_simple(context, size):
+    """Send file A with the specified size."""
+    # Parse size (e.g., "1MB", "100KB")
+    from features.steps.file import parse_human_size
+    size_bytes = parse_human_size(size)
+    
+    # Create and send the file
+    filename = 'A'
+    send_file(context, filename, size_bytes, background=False)
+
+
+@then('lidi-file-receive receives file A in {timeout:d} seconds')
+def step_receive_file_a_timeout(context, timeout):
+    """Verify that file A is received within the timeout."""
+    test_file(context, 'A', timeout)
+
+@then('the receiver Prometheus counter {metric} is greater than or equal to {value:d}')
+def step_verify_receiver_prometheus_counter_gte(context, metric, value):
+    """Verify that a receiver Prometheus counter has a value >= the expected amount."""
+    import urllib.request
+
+    url = 'http://127.0.0.1:9002/metrics'
+    try:
+        response = urllib.request.urlopen(url, timeout=2)
+        content = response.read().decode('utf-8')
+
+        # Parse the metric value from Prometheus text format
+        found = False
+        for line in content.split('\n'):
+            if line.startswith(metric) and not line.startswith('#'):
+                parts = line.split()
+                if len(parts) >= 2:
+                    metric_value = int(float(parts[-1]))
+                    found = True
+                    assert metric_value >= value, \
+                        f"Expected {metric} >= {value}, got {metric_value}"
+                    break
+
+        assert found, f"Metric {metric} not found in Prometheus receiver endpoint"
+    except Exception as e:
+        raise AssertionError(f"Failed to verify receiver metric {metric}: {e}")
+
+
+@then('the sender Prometheus gauge {metric} is greater than or equal to {value:d}')
+def step_verify_sender_prometheus_gauge_gte(context, metric, value):
+    """Verify that a sender Prometheus gauge has a value >= the expected amount."""
+    import urllib.request
+
+    url = 'http://127.0.0.1:9001/metrics'
+    try:
+        response = urllib.request.urlopen(url, timeout=2)
+        content = response.read().decode('utf-8')
+
+        # Parse the metric value from Prometheus text format
+        found = False
+        for line in content.split('\n'):
+            if line.startswith(metric) and not line.startswith('#'):
+                parts = line.split()
+                if len(parts) >= 2:
+                    metric_value = int(float(parts[-1]))
+                    found = True
+                    assert metric_value >= value, \
+                        f"Expected {metric} >= {value}, got {metric_value}"
+                    break
+
+        assert found, f"Metric {metric} not found in Prometheus sender endpoint"
+    except Exception as e:
+        raise AssertionError(f"Failed to verify sender gauge {metric}: {e}")
+
+
+@then('the receiver Prometheus gauge {metric} is greater than or equal to {value:d}')
+def step_verify_receiver_prometheus_gauge_gte(context, metric, value):
+    """Verify that a receiver Prometheus gauge has a value >= the expected amount."""
+    import urllib.request
+
+    url = 'http://127.0.0.1:9002/metrics'
+    try:
+        response = urllib.request.urlopen(url, timeout=2)
+        content = response.read().decode('utf-8')
+
+        # Parse the metric value from Prometheus text format
+        found = False
+        for line in content.split('\n'):
+            if line.startswith(metric) and not line.startswith('#'):
+                parts = line.split()
+                if len(parts) >= 2:
+                    metric_value = int(float(parts[-1]))
+                    found = True
+                    assert metric_value >= value, \
+                        f"Expected {metric} >= {value}, got {metric_value}"
+                    break
+
+        assert found, f"Metric {metric} not found in Prometheus receiver endpoint"
+    except Exception as e:
+        raise AssertionError(f"Failed to verify receiver gauge {metric}: {e}")
+
+
+@then('the receiver Prometheus histogram {metric} is present')
+def step_verify_receiver_prometheus_histogram_present(context, metric):
+    """Verify that a receiver Prometheus histogram is present with buckets."""
+    import urllib.request
+
+    url = 'http://127.0.0.1:9002/metrics'
+    try:
+        response = urllib.request.urlopen(url, timeout=2)
+        content = response.read().decode('utf-8')
+
+        # Check for histogram buckets (metric_bucket) or count/sum
+        found_bucket = False
+        found_count = False
+        found_sum = False
+
+        for line in content.split('\n'):
+            if line.startswith(f'{metric}_bucket') and not line.startswith('#'):
+                found_bucket = True
+            if line.startswith(f'{metric}_count') and not line.startswith('#'):
+                found_count = True
+            if line.startswith(f'{metric}_sum') and not line.startswith('#'):
+                found_sum = True
+
+        assert found_bucket and found_count and found_sum, \
+            f"Histogram {metric} not properly present (bucket={found_bucket}, count={found_count}, sum={found_sum})"
+    except Exception as e:
+        raise AssertionError(f"Failed to verify histogram {metric}: {e}")
+
+
+@then('the receiver Prometheus histogram {metric} has count and sum')
+def step_verify_receiver_prometheus_histogram_count_sum(context, metric):
+    """Verify that a receiver Prometheus histogram has count and sum (may not have buckets if no samples)."""
+    import urllib.request
+
+    url = 'http://127.0.0.1:9002/metrics'
+    try:
+        response = urllib.request.urlopen(url, timeout=2)
+        content = response.read().decode('utf-8')
+
+        found_count = False
+        found_sum = False
+
+        for line in content.split('\n'):
+            if line.startswith(f'{metric}_count') and not line.startswith('#'):
+                found_count = True
+            if line.startswith(f'{metric}_sum') and not line.startswith('#'):
+                found_sum = True
+
+        assert found_count and found_sum, \
+            f"Histogram {metric} missing count or sum (count={found_count}, sum={found_sum})"
+    except Exception as e:
+        raise AssertionError(f"Failed to verify histogram {metric}: {e}")
+
+
+@then('the sender Prometheus gauge {metric} is less than or equal to {value:d}')
+def step_verify_sender_prometheus_gauge_lte(context, metric, value):
+    """Verify that a sender Prometheus gauge has a value <= the expected amount."""
+    import urllib.request
+
+    url = 'http://127.0.0.1:9001/metrics'
+    try:
+        response = urllib.request.urlopen(url, timeout=2)
+        content = response.read().decode('utf-8')
+
+        # Parse the metric value from Prometheus text format
+        found = False
+        for line in content.split('\n'):
+            if line.startswith(metric) and not line.startswith('#'):
+                parts = line.split()
+                if len(parts) >= 2:
+                    metric_value = int(float(parts[-1]))
+                    found = True
+                    assert metric_value <= value, \
+                        f"Expected {metric} <= {value}, got {metric_value}"
+                    break
+
+        assert found, f"Metric {metric} not found in Prometheus sender endpoint"
+    except Exception as e:
+        raise AssertionError(f"Failed to verify sender gauge {metric}: {e}")
+
+
+@then('the receiver Prometheus gauge {metric} is less than or equal to {value:d}')
+def step_verify_receiver_prometheus_gauge_lte(context, metric, value):
+    """Verify that a receiver Prometheus gauge has a value <= the expected amount."""
+    import urllib.request
+
+    url = 'http://127.0.0.1:9002/metrics'
+    try:
+        response = urllib.request.urlopen(url, timeout=2)
+        content = response.read().decode('utf-8')
+
+        # Parse the metric value from Prometheus text format
+        found = False
+        for line in content.split('\n'):
+            if line.startswith(metric) and not line.startswith('#'):
+                parts = line.split()
+                if len(parts) >= 2:
+                    metric_value = int(float(parts[-1]))
+                    found = True
+                    assert metric_value <= value, \
+                        f"Expected {metric} <= {value}, got {metric_value}"
+                    break
+
+        assert found, f"Metric {metric} not found in Prometheus receiver endpoint"
+    except Exception as e:
+        raise AssertionError(f"Failed to verify receiver gauge {metric}: {e}")
+

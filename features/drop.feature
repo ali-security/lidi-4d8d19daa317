@@ -20,3 +20,11 @@ Feature: Send simple files with network drop
     And lidi is started with max throughput of 100mbit
     When lidi-file-send file A of size 10MB
     Then lidi-file-receive file A in 5 seconds
+
+  Scenario: Blocks fail to decode when drop rate exceeds repair capacity
+    Given there is a network drop of 50 %
+    And repair percentage is 10 %
+    And lidi is started with max throughput of 100mbit
+    When lidi-file-send file A of size 100KB
+    Then wait 10 seconds
+    And the receiver Prometheus counter lidi_receive_blocks_decode_failed is greater than or equal to 1

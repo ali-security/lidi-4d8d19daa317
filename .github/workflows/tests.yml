@@ -25,7 +25,7 @@ jobs:
         run: cargo install cargo-hack
 
       - name: Build all features
-        run: cargo hack check --each-feature --no-dev-deps
+        run: just cargo-hack
 
   tests:
     name: Run tests

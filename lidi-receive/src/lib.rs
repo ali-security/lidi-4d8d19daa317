@@ -235,6 +235,16 @@ pub struct Receiver<ClientNew, ClientEnd> {
     )>,
     active_transfers:
         dashmap::DashMap<protocol::ClientId, crossbeam_channel::Sender<protocol::Block>>,
+    #[cfg(feature = "prometheus")]
+    ended_transfers: std::sync::Arc<
+        std::sync::Mutex<
+            std::collections::HashMap<protocol::ClientId, crossbeam_channel::Sender<protocol::Block>>,
+        >,
+    >,
+    #[cfg(all(feature = "prometheus", not(feature = "receive-mmsg")))]
+    reblock_queues: std::sync::Arc<std::sync::Mutex<Vec<crossbeam_channel::Receiver<raptorq::EncodingPacket>>>>,
+    #[cfg(all(feature = "prometheus", feature = "receive-mmsg"))]
+    reblock_queues: std::sync::Arc<std::sync::Mutex<Vec<crossbeam_channel::Receiver<Vec<raptorq::EncodingPacket>>>>>,
     client_new: ClientNew,
     client_end: ClientEnd,
 }
@@ -254,8 +264,35 @@ where
         loop {
             thread::sleep(timer);
 
+            if let Ok(queues) = self.reblock_queues.lock() {
+                let reblock_total: usize = queues.iter().map(|q| q.len()).sum();
+                log::debug!("Reblock queue metric: {} queues, total len = {}", queues.len(), reblock_total);
+                metrics::gauge!("lidi_receive_reblock_queue_len").set(reblock_total as f64);
+            }
+
             metrics::gauge!("lidi_receive_dispatch_queue_len").set(self.for_dispatch.len() as f64);
             metrics::gauge!("lidi_receive_clients_queue_len").set(self.for_clients.len() as f64);
+
+            if let Ok(mut ended) = self.ended_transfers.lock() {
+                ended.retain(|client_id, client_sendq| {
+                    let retain = !client_sendq.is_empty();
+                    if !retain {
+                        log::debug!("purging ended transfer of client {client_id:x}");
+                    }
+                    retain
+                });
+                metrics::gauge!("lidi_receive_ended_transfers_retained").set(ended.len() as f64);
+            }
+
+            let (total, max) =
+                self.active_transfers
+                    .iter()
+                    .fold((0usize, 0usize), |(t, m), ref_multi| {
+                        let len = ref_multi.value().len();
+                        (t + len, m.max(len))
+                    });
+            metrics::gauge!("lidi_receive_client_sendq_total_len").set(total as f64);
+            metrics::gauge!("lidi_receive_client_sendq_max_len").set(max as f64);
         }
     }
 
@@ -267,8 +304,14 @@ where
     ) -> Result<Self, Error> {
         let config = Config::from(config);
 
-        let (to_dispatch, for_dispatch) = crossbeam_channel::unbounded();
-        let (to_clients, for_clients) = crossbeam_channel::unbounded();
+        let (to_dispatch, for_dispatch) = match config.dispatch_queue_size {
+            0 => crossbeam_channel::unbounded(),
+            n => crossbeam_channel::bounded(n),
+        };
+        let (to_clients, for_clients) = match config.clients_queue_size {
+            0 => crossbeam_channel::unbounded(),
+            n => crossbeam_channel::bounded(n),
+        };
 
         Ok(Self {
             config,
@@ -278,6 +321,10 @@ where
             to_clients,
             for_clients,
             active_transfers: dashmap::DashMap::new(),
+            #[cfg(feature = "prometheus")]
+            ended_transfers: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            #[cfg(feature = "prometheus")]
+            reblock_queues: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
             client_new,
             client_end,
         })
@@ -295,6 +342,14 @@ where
 
         log::info!("receive mode is {}", self.config.mode);
         log::info!("sending to {:?}", self.config.to);
+
+        log::info!(
+            "queue sizes: reblock={} dispatch={} clients={} client={}",
+            self.config.reblock_queue_size,
+            self.config.dispatch_queue_size,
+            self.config.clients_queue_size,
+            self.config.client_queue_size,
+        );
 
         log::info!(
             "reset timeout is {} seconds",
@@ -356,7 +411,15 @@ where
         }
 
         for port in &self.config.ports {
-            let (to_reblock, for_reblock) = crossbeam_channel::unbounded();
+            let (to_reblock, for_reblock) = match self.config.reblock_queue_size {
+                0 => crossbeam_channel::unbounded(),
+                n => crossbeam_channel::bounded(n),
+            };
+
+            #[cfg(feature = "prometheus")]
+            if let Ok(mut queues) = self.reblock_queues.lock() {
+                queues.push(for_reblock.clone());
+            }
 
             thread::Builder::new()
                 .name(format!("reblock_{port}"))

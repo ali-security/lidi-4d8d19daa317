@@ -93,14 +93,12 @@ Feature: Prometheus metrics (lidi-send / lidi-receive)
     Then lidi-file-receive file A in 10 seconds
     And the receiver Prometheus gauge lidi_receive_clients_queue_len is greater than or equal to 0
 
-  @wip
   Scenario: lidi_receive_client_sendq_total_len gauge available (T15.15)
     Given lidi is started with max throughput of 90mbit
     When lidi-file-send file A of size 500KB
     Then lidi-file-receive file A in 10 seconds
     And the receiver Prometheus gauge lidi_receive_client_sendq_total_len is greater than or equal to 0
 
-  @wip
   Scenario: lidi_receive_client_sendq_max_len gauge available (T15.16)
     Given lidi is started with max throughput of 90mbit
     When lidi-file-send file A of size 500KB

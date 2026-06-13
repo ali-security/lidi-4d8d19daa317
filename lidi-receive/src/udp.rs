@@ -80,12 +80,12 @@ pub fn start<ClientNew, ClientEnd>(
             socket::ReceiveDatagrams::Multiple(datagrams) => {
                 #[cfg(feature = "prometheus")]
                 metrics::counter!("lidi_receive_udp_packets").increment(datagrams.len() as u64);
-                to_reblock.send(
-                    datagrams
-                        .into_iter()
-                        .map(raptorq::EncodingPacket::deserialize)
-                        .collect(),
-                )?;
+                let packets: Vec<_> = datagrams
+                    .into_iter()
+                    .map(raptorq::EncodingPacket::deserialize)
+                    .collect();
+                log::trace!("UDP recv: sending {} packets to reblock queue", packets.len());
+                to_reblock.send(packets)?;
             }
         }
     }

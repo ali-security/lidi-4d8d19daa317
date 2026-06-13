@@ -14,6 +14,18 @@ def before_all(context):
     proc = subprocess.Popen(['just', 'release'])
     proc.communicate()
 
+    # build lidi-clients without the inotify feature, to test the directory
+    # polling fallback used by lidi-dir-send --watch when inotify is not
+    # available
+    proc = subprocess.Popen([
+        'cargo', 'build', '--release',
+        '--package', 'lidi-clients',
+        '--no-default-features',
+        '--features', 'hash,log4rs,tcp,tls,unix',
+        '--target-dir', 'target/no-inotify',
+    ])
+    proc.communicate()
+
 
 # function called before each test: initialize context with default values
 def before_scenario(context, _feature):
@@ -66,6 +78,10 @@ def before_scenario(context, _feature):
     
     # directory containing binaries
     context.bin_dir = "./target/release/"
+
+    # directory containing lidi-clients binaries built without the inotify
+    # feature (used to test the directory polling fallback)
+    context.bin_dir_no_inotify = "./target/no-inotify/release/"
     
     # some possible options
     context.network_down_after = None

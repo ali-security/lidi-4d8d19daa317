@@ -156,9 +156,12 @@ def build_lidi_receive_file_command(context):
 
     return lidi_receive_file_command
 
-def build_lidi_send_dir_command(context, watch, ignore):
+def build_lidi_send_dir_command(context, watch, ignore, bin_dir=None):
+    if bin_dir is None:
+        bin_dir = context.bin_dir
+
     lidi_send_dir_command = [
-        f'{context.bin_dir}/lidi-dir-send',
+        f'{bin_dir}/lidi-dir-send',
         '--to-tcp', f'127.0.0.1:{context.tcp_send_port}',
         '--log-config', context.log_config_lidi_send_dir
     ]

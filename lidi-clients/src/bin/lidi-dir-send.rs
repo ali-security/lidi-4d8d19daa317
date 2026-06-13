@@ -106,7 +106,6 @@ fn main() {
         overwrite: false,
         ignore: args.ignore,
         recursive: args.recursive,
-        #[cfg(feature = "inotify")]
         watch: args.watch,
         tls: args.tls,
     };

@@ -8,13 +8,21 @@ use std::net;
 #[cfg(feature = "unix")]
 use std::os::unix;
 #[cfg(feature = "inotify")]
-use std::{collections, io, thread};
+use std::io;
 use std::{
-    fs,
+    collections, fs,
     io::{Read, Write},
     os::unix::fs::PermissionsExt,
-    path,
+    path, thread,
 };
+
+#[cfg(not(feature = "inotify"))]
+use std::time::Duration;
+
+/// Delay between two directory scans when watching for new files without
+/// inotify support.
+#[cfg(not(feature = "inotify"))]
+const POLL_INTERVAL: Duration = Duration::from_secs(1);
 
 #[cfg(feature = "inotify")]
 fn notifier_new_dir(
@@ -136,7 +144,75 @@ fn notifier_thread(
     }
 }
 
-#[cfg(feature = "inotify")]
+/// Lists every file under `dir` (recursively if `recursive` is set).
+#[cfg(not(feature = "inotify"))]
+fn list_files(
+    dir: &path::Path,
+    recursive: bool,
+) -> Result<collections::HashSet<path::PathBuf>, file::Error> {
+    let mut files = collections::HashSet::new();
+
+    let mut todo = collections::HashSet::new();
+    todo.insert(dir.to_path_buf());
+
+    loop {
+        if todo.is_empty() {
+            break;
+        }
+
+        let mut next = collections::HashSet::new();
+
+        for dir in todo {
+            for entry in dir
+                .read_dir()?
+                .filter_map(|entry| {
+                    entry
+                        .inspect_err(|e| log::error!("failed to read entry: {e}"))
+                        .ok()
+                        .map(|entry| entry.path())
+                })
+                .filter(|entry| recursive || entry.is_file())
+            {
+                if entry.is_dir() {
+                    next.insert(entry);
+                } else if entry.is_file() {
+                    files.insert(entry);
+                }
+            }
+        }
+
+        todo = next;
+    }
+
+    Ok(files)
+}
+
+/// Without inotify, new files are detected by periodically re-scanning the
+/// directory tree and comparing it to the previous scan.
+// `dir` is taken by value to match the inotify variant of this function.
+#[cfg(not(feature = "inotify"))]
+#[allow(clippy::needless_pass_by_value)]
+fn notifier_thread(
+    dir: path::PathBuf,
+    recursive: bool,
+    to_send: &crossbeam_channel::Sender<Option<path::PathBuf>>,
+) -> Result<(), file::Error> {
+    let mut seen = list_files(&dir, recursive)?;
+
+    loop {
+        thread::sleep(POLL_INTERVAL);
+
+        for entry in list_files(&dir, recursive)? {
+            if seen.insert(entry.clone()) {
+                log::debug!("watch new file {}", entry.display());
+                to_send.send(Some(entry)).map_err(|e| {
+                    file::Error::Other(format!("failed to send to send_file_thread: {e}"))
+                })?;
+            }
+        }
+    }
+}
+
 fn send_file_thread(
     config: &file::Config<crate::DiodeSend>,
     for_send: &crossbeam_channel::Receiver<Option<path::PathBuf>>,
@@ -178,17 +254,6 @@ fn send_file_thread(
     }
 }
 
-#[cfg(not(feature = "inotify"))]
-pub fn send_dir(
-    _config: &file::Config<crate::DiodeSend>,
-    _path: &path::Path,
-) -> Result<(), file::Error> {
-    Err(file::Error::Other(String::from(
-        "directory send requires the inotify feature",
-    )))
-}
-
-#[cfg(feature = "inotify")]
 pub fn send_dir(
     config: &file::Config<crate::DiodeSend>,
     path: &path::Path,
@@ -211,17 +276,12 @@ pub fn send_dir(
         })?;
 
         if config.watch {
-            #[cfg(not(feature = "inotify"))]
-            log::warn!("cannot watch directory because inotify was not enabled at compilation");
-            #[cfg(feature = "inotify")]
-            {
-                let dir = dir.clone();
-                thread::Builder::new().spawn_scoped(scope, || {
-                    if let Err(e) = notifier_thread(dir, config.recursive, &to_send) {
-                        log::error!("{e}");
-                    }
-                })?;
-            }
+            let dir = dir.clone();
+            thread::Builder::new().spawn_scoped(scope, || {
+                if let Err(e) = notifier_thread(dir, config.recursive, &to_send) {
+                    log::error!("{e}");
+                }
+            })?;
         }
 
         let mut todo = collections::HashSet::new();

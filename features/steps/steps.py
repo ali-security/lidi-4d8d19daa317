@@ -175,6 +175,10 @@ def step_lidi_send_dir_with_watch_and_ignore_dot_files(context):
 def step_lidi_send_dir_with_watch(context):
     start_lidi_send_dir(context, True)
 
+@given('lidi-dir-send is started with watch without inotify')
+def step_lidi_send_dir_with_watch_without_inotify(context):
+    start_lidi_send_dir(context, True, bin_dir=context.bin_dir_no_inotify)
+
 @given('lidi-dir-send is started')
 def step_lidi_send_dir(context):
     start_lidi_send_dir(context)

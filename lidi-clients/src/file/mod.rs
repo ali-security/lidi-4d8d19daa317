@@ -18,7 +18,6 @@ pub struct Config<D> {
     pub overwrite: bool,
     pub ignore: Option<regex::Regex>,
     pub recursive: bool,
-    #[cfg(feature = "inotify")]
     pub watch: bool,
     pub tls: crate::Tls,
 }

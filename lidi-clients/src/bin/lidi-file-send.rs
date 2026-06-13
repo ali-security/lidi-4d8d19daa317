@@ -93,7 +93,6 @@ fn main() {
         overwrite: false,
         ignore: None,
         recursive: false,
-        #[cfg(feature = "inotify")]
         watch: false,
         tls: args.tls,
     };

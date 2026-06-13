@@ -12,7 +12,7 @@ def build_lidi_config(context, udp_port, log_config, side='both'):
     block = getattr(context, 'block_size', 20_000) or 20_000
     _repair = getattr(context, 'repair', None)
     repair = _repair if _repair is not None else 1
-    max_clients = 2
+    max_clients = getattr(context, 'max_clients', 2)
     hash_val = False
     flush = getattr(context, 'tcp_flush', False)
 

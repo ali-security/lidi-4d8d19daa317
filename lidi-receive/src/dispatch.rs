@@ -100,8 +100,8 @@ pub fn start<ClientNew, ClientEnd>(
                     Some(endpoint_id) => {
                         let (client_sendq, client_recvq) =
                             pending_start.remove(&client_id).unwrap_or_else(|| {
-                                if 0 < receiver.config.queue_size {
-                                    crossbeam_channel::bounded(receiver.config.queue_size)
+                                if 0 < receiver.config.client_queue_size {
+                                    crossbeam_channel::bounded(receiver.config.client_queue_size)
                                 } else {
                                     crossbeam_channel::unbounded()
                                 }
@@ -139,11 +139,12 @@ pub fn start<ClientNew, ClientEnd>(
                             }
                         }
                         collections::hash_map::Entry::Vacant(ve) => {
-                            let (client_sendq, client_recvq) = if 0 < receiver.config.queue_size {
-                                crossbeam_channel::bounded(receiver.config.queue_size)
-                            } else {
-                                crossbeam_channel::unbounded()
-                            };
+                            let (client_sendq, client_recvq) =
+                                if 0 < receiver.config.client_queue_size {
+                                    crossbeam_channel::bounded(receiver.config.client_queue_size)
+                                } else {
+                                    crossbeam_channel::unbounded()
+                                };
 
                             if client_sendq
                                 .try_send(block)

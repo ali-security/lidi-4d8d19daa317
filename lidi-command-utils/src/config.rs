@@ -17,7 +17,7 @@ const DEFAULT_MTU: u16 = 1500;
 const DEFAULT_BLOCK: u32 = 220_000;
 const DEFAULT_REPAIR_PERCENTAGE: u8 = 1;
 const DEFAULT_RESET_TIMEOUT_SECONDS: u64 = 2;
-const DEFAULT_QUEUE_SIZE: usize = 0;
+const DEFAULT_CLIENT_QUEUE_SIZE: usize = 0;
 
 #[derive(Debug)]
 pub enum Error {
@@ -457,10 +457,10 @@ pub struct Receive {
         feature = "command-line",
         clap(
             long,
-            help = "Maximum number of RaptorQ blocks to buffer for each client (0 means infinite)"
+            help = "Maximum number of RaptorQ blocks to buffer per client in the client queue (0 means unbounded)"
         )
     )]
-    queue_size: Option<usize>,
+    client_queue_size: Option<usize>,
     #[cfg_attr(
         feature = "command-line",
         clap(
@@ -513,8 +513,8 @@ impl Receive {
     }
 
     #[must_use]
-    pub fn queue_size(&self) -> usize {
-        self.queue_size.unwrap_or(DEFAULT_QUEUE_SIZE)
+    pub fn client_queue_size(&self) -> usize {
+        self.client_queue_size.unwrap_or(DEFAULT_CLIENT_QUEUE_SIZE)
     }
 
     #[must_use]

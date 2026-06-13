@@ -155,8 +155,8 @@ struct Config {
     to: Vec<config::Endpoint>,
     reset_timeout: time::Duration,
     abort_timeout: Option<time::Duration>,
-    // Maximum number of RaptorQ blocks to buffer for each client (0 means infinite).
-    queue_size: usize,
+    // Per-client block queue size (0 = unbounded). Matches lidi_receive_client_queue_full.
+    client_queue_size: usize,
     mode: config::Mode,
     #[cfg(feature = "prometheus")]
     prometheus_listen: Option<net::SocketAddr>,
@@ -201,7 +201,7 @@ impl From<&config::ReceiveConfig> for Config {
             to: config.receive.to(),
             reset_timeout: config.receive.reset_timeout(),
             abort_timeout: config.receive.abort_timeout(),
-            queue_size: config.receive.queue_size(),
+            client_queue_size: config.receive.client_queue_size(),
             mode,
             #[cfg(feature = "prometheus")]
             prometheus_listen: config.receive.prometheus_listen(),

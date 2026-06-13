@@ -30,7 +30,7 @@ def build_lidi_config(context, udp_port, log_config, side='both'):
     # Timeout configuration
     reset_timeout = getattr(context, 'reset_timeout', 2)
     abort_timeout = getattr(context, 'abort_timeout', 60)
-    queue_size = getattr(context, 'queue_size', 4096)
+    client_queue_size = getattr(context, 'client_queue_size', 4096)
 
     # Build receive section dynamically to handle optional abort_timeout
     udp_receive_mode = getattr(context, 'udp_receive_mode', 'mmsg')
@@ -38,7 +38,7 @@ def build_lidi_config(context, udp_port, log_config, side='both'):
         'log = "INFO"',
         'from = "127.0.0.1"',
         f'mode = "{udp_receive_mode}"',
-        f"queue_size = {queue_size}",
+        f"client_queue_size = {client_queue_size}",
         f"reset_timeout = {reset_timeout}",
     ]
     # Only include abort_timeout if it's not disabled (not 0)

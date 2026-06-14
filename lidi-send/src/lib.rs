@@ -195,7 +195,7 @@ where
             thread::sleep(timer);
 
             metrics::gauge!("lidi_send_block_recycler_len").set(self.block_recycler.len() as f64);
-            metrics::gauge!("lidi_send_encode_queue_len").set(self.for_encode.len() as f64);
+            metrics::gauge!("lidi_send_queue_len").set(self.for_encode.len() as f64);
         }
     }
 

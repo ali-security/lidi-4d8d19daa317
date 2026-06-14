@@ -2968,7 +2968,7 @@ def _read_sender_prometheus_gauge(metric_name):
     return 0
 
 
-_SEND_PIPELINE_GAUGES = ['lidi_send_udp_queue_len']
+_SEND_PIPELINE_GAUGES = ['lidi_send_queue_len']
 
 
 @given('udp_queue_size is configured to {size}')

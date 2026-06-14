@@ -17,7 +17,7 @@ Feature: Memory stability of lidi-send under congestion
   Scenario: T-SS1 - Sender pipeline gauges are observable during transfer
     Given lidi is started with max throughput of 100mbit
     When lidi-file-send file tss1.bin of size 50MB
-    Then the sender Prometheus gauge lidi_send_udp_queue_len is greater than or equal to 1
+    Then the sender Prometheus gauge lidi_send_queue_len is greater than or equal to 1
     And the sender Prometheus gauge lidi_send_block_recycler_len is greater than or equal to 1
     And lidi-file-receive file tss1.bin in 15 seconds
 
@@ -29,7 +29,7 @@ Feature: Memory stability of lidi-send under congestion
     Given lidi is started with max throughput of 100mbit
     When lidi-file-send file tss2.bin of size 100MB
     Then lidi-file-receive file tss2.bin in 30 seconds
-    And the sender Prometheus gauge lidi_send_udp_queue_len is less than or equal to 0
+    And the sender Prometheus gauge lidi_send_queue_len is less than or equal to 0
 
   Scenario: T-SS3 - Transfer succeeds with default configuration on fast loopback
     Given lidi is started with max throughput of 100mbit

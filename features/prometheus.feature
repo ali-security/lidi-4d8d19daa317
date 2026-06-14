@@ -9,7 +9,7 @@ Feature: Prometheus metrics (lidi-send / lidi-receive)
   via an HTTP endpoint (configured on 9001/9002).
 
   Metrics collected:
-    - Sender: lidi_send_udp_packets (counter), lidi_send_udp_queue_len (gauge)
+    - Sender: lidi_send_udp_packets (counter), lidi_send_queue_len (gauge)
     - Receiver: lidi_receive_blocks_decoded (counter), lidi_receive_blocks_lost (counter),
       lidi_receive_decode_with_n_packets (histogram)
 
@@ -49,11 +49,11 @@ Feature: Prometheus metrics (lidi-send / lidi-receive)
     And the Prometheus endpoint on 9001 responds with metrics
     And the Prometheus endpoint on 9002 responds with metrics
 
-  Scenario: lidi_send_udp_queue_len gauge is available (T15.7)
+  Scenario: lidi_send_queue_len gauge is available (T15.7)
     Given lidi is started with max throughput of 90mbit
     When lidi-file-send file A of size 100KB
     Then lidi-file-receive file A in 10 seconds
-    And the sender Prometheus gauge lidi_send_udp_queue_len is greater than or equal to 0
+    And the sender Prometheus gauge lidi_send_queue_len is greater than or equal to 0
 
   Scenario: lidi_send_block_recycler_len gauge is available (T15.8)
     Given lidi is started with max throughput of 90mbit

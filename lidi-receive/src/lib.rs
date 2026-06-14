@@ -16,8 +16,14 @@
 //! - there are `max_clients` clients workers running in parallel,
 //! - there are `nb_decode_threads` decode workers running in parallel.
 
-#[cfg(not(any(feature = "receive-native", feature = "receive-msg", feature = "receive-mmsg")))]
-compile_error!("at least one of receive-native, receive-msg, or receive-mmsg features must be enabled");
+#[cfg(not(any(
+    feature = "receive-native",
+    feature = "receive-msg",
+    feature = "receive-mmsg"
+)))]
+compile_error!(
+    "at least one of receive-native, receive-msg, or receive-mmsg features must be enabled"
+);
 
 use lidi_command_utils::config;
 #[cfg(feature = "to-tls")]
@@ -241,13 +247,19 @@ pub struct Receiver<ClientNew, ClientEnd> {
     #[cfg(feature = "prometheus")]
     ended_transfers: std::sync::Arc<
         std::sync::Mutex<
-            std::collections::HashMap<protocol::ClientId, crossbeam_channel::Sender<protocol::Block>>,
+            std::collections::HashMap<
+                protocol::ClientId,
+                crossbeam_channel::Sender<protocol::Block>,
+            >,
         >,
     >,
     #[cfg(all(feature = "prometheus", not(feature = "receive-mmsg")))]
-    reblock_queues: std::sync::Arc<std::sync::Mutex<Vec<crossbeam_channel::Receiver<raptorq::EncodingPacket>>>>,
+    reblock_queues:
+        std::sync::Arc<std::sync::Mutex<Vec<crossbeam_channel::Receiver<raptorq::EncodingPacket>>>>,
     #[cfg(all(feature = "prometheus", feature = "receive-mmsg"))]
-    reblock_queues: std::sync::Arc<std::sync::Mutex<Vec<crossbeam_channel::Receiver<Vec<raptorq::EncodingPacket>>>>>,
+    reblock_queues: std::sync::Arc<
+        std::sync::Mutex<Vec<crossbeam_channel::Receiver<Vec<raptorq::EncodingPacket>>>>,
+    >,
     client_new: ClientNew,
     client_end: ClientEnd,
 }
@@ -268,8 +280,13 @@ where
             thread::sleep(timer);
 
             if let Ok(queues) = self.reblock_queues.lock() {
-                let reblock_total: usize = queues.iter().map(|q| q.len()).sum();
-                log::debug!("Reblock queue metric: {} queues, total len = {}", queues.len(), reblock_total);
+                let reblock_total: usize =
+                    queues.iter().map(crossbeam_channel::Receiver::len).sum();
+                log::debug!(
+                    "Reblock queue metric: {} queues, total len = {}",
+                    queues.len(),
+                    reblock_total
+                );
                 metrics::gauge!("lidi_receive_reblock_queue_len").set(reblock_total as f64);
             }
 
@@ -325,7 +342,9 @@ where
             for_clients,
             active_transfers: dashmap::DashMap::new(),
             #[cfg(feature = "prometheus")]
-            ended_transfers: std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new())),
+            ended_transfers: std::sync::Arc::new(std::sync::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
             #[cfg(feature = "prometheus")]
             reblock_queues: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
             client_new,

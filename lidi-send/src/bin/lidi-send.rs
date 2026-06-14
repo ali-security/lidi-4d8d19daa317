@@ -229,14 +229,16 @@ fn main() {
 
     // Validate that at least one endpoint is configured
     if config.send.from().is_empty() {
-        eprintln!("configuration error: at least one 'from' endpoint must be configured in [send] section");
+        log::error!(
+            "configuration error: at least one 'from' endpoint must be configured in [send] section"
+        );
         return;
     }
 
     // Validate MTU minimum (1280 is IPv6 minimum)
     let mtu = config.common.mtu();
     if mtu < 1280 {
-        eprintln!("configuration error: MTU must be at least 1280 bytes (got {})", mtu);
+        log::error!("configuration error: MTU must be at least 1280 bytes (got {mtu})");
         return;
     }
 

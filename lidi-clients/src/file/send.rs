@@ -1,14 +1,14 @@
-#[cfg(feature = "tls")]
-use crate::tls;
 use crate::file;
 #[cfg(feature = "hash")]
 use crate::hash;
+#[cfg(feature = "tls")]
+use crate::tls;
+#[cfg(feature = "inotify")]
+use std::io;
 #[cfg(feature = "tcp")]
 use std::net;
 #[cfg(feature = "unix")]
 use std::os::unix;
-#[cfg(feature = "inotify")]
-use std::io;
 use std::{
     collections, fs,
     io::{Read, Write},

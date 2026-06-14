@@ -463,17 +463,26 @@ pub struct Receive {
     client_queue_size: Option<usize>,
     #[cfg_attr(
         feature = "command-line",
-        clap(long, help = "Maximum items in to_reblock pipeline queue (0 means unbounded)")
+        clap(
+            long,
+            help = "Maximum items in to_reblock pipeline queue (0 means unbounded)"
+        )
     )]
     reblock_queue_size: Option<usize>,
     #[cfg_attr(
         feature = "command-line",
-        clap(long, help = "Maximum items in to_dispatch pipeline queue (0 means unbounded)")
+        clap(
+            long,
+            help = "Maximum items in to_dispatch pipeline queue (0 means unbounded)"
+        )
     )]
     dispatch_queue_size: Option<usize>,
     #[cfg_attr(
         feature = "command-line",
-        clap(long, help = "Maximum items in to_clients pipeline queue (0 means unbounded)")
+        clap(
+            long,
+            help = "Maximum items in to_clients pipeline queue (0 means unbounded)"
+        )
     )]
     clients_queue_size: Option<usize>,
     #[cfg_attr(

@@ -84,7 +84,10 @@ pub fn start<ClientNew, ClientEnd>(
                     .into_iter()
                     .map(raptorq::EncodingPacket::deserialize)
                     .collect();
-                log::trace!("UDP recv: sending {} packets to reblock queue", packets.len());
+                log::trace!(
+                    "UDP recv: sending {} packets to reblock queue",
+                    packets.len()
+                );
                 to_reblock.send(packets)?;
             }
         }

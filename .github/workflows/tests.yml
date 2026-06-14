@@ -18,6 +18,11 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Install system dependencies
+        run: |
+          sudo apt update
+          sudo apt install just
+
       - name: Update rust
         run: rustup update
 
@@ -34,16 +39,16 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Get admin permissions for tc
-        run: sudo setcap cap_net_admin+ep /usr/sbin/tc
-
       - name: Install system dependencies
         run: |
           sudo apt update
-          sudo apt install python3-pip python3-virtualenv just
+          sudo apt install python3-pip python3-virtualenv just valgrind
 
       - name: Update rust
         run: rustup update
+
+      - name: Get admin permissions for tc
+        run: sudo setcap cap_net_admin+ep /usr/sbin/tc
 
       - name: Create virtualenv
         run: virtualenv venv

@@ -72,7 +72,10 @@ pub fn getsockopt_buffer_size(fd: i32, option_name: i32) -> Result<i32, io::Erro
     if res == 0 {
         Ok(sz)
     } else {
-        Err(io::Error::other("libc::getsockopt"))
+        let errno = unsafe { *libc::__errno_location() };
+        Err(io::Error::other(format!(
+            "libc::getsockopt returned {res}, errno == {errno}",
+        )))
     }
 }
 
@@ -93,6 +96,9 @@ pub fn setsockopt_buffer_size(fd: i32, size: i32, option_name: i32) -> Result<()
     if res == 0 {
         Ok(())
     } else {
-        Err(io::Error::other("libc::setsockopt"))
+        let errno = unsafe { *libc::__errno_location() };
+        Err(io::Error::other(format!(
+            "libc::setsockopt returned {res}, errno == {errno}",
+        )))
     }
 }

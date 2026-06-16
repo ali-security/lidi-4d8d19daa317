@@ -90,9 +90,11 @@ where
                 let hash = hasher.finalize();
                 log::info!("client {client_id:x}: hash is {hash:x}");
             }
-            return Ok(());
+            break;
         }
 
         expected_sequence_number = expected_sequence_number.wrapping_add(1);
     }
+
+    Ok(())
 }

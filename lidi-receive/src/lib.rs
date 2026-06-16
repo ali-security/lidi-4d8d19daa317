@@ -244,15 +244,6 @@ pub struct Receiver<ClientNew, ClientEnd> {
     )>,
     active_transfers:
         dashmap::DashMap<protocol::ClientId, crossbeam_channel::Sender<protocol::Block>>,
-    #[cfg(feature = "prometheus")]
-    ended_transfers: std::sync::Arc<
-        std::sync::Mutex<
-            std::collections::HashMap<
-                protocol::ClientId,
-                crossbeam_channel::Sender<protocol::Block>,
-            >,
-        >,
-    >,
     #[cfg(all(feature = "prometheus", not(feature = "receive-mmsg")))]
     reblock_queues:
         std::sync::Arc<std::sync::Mutex<Vec<crossbeam_channel::Receiver<raptorq::EncodingPacket>>>>,
@@ -293,16 +284,8 @@ where
             metrics::gauge!("lidi_receive_dispatch_queue_len").set(self.for_dispatch.len() as f64);
             metrics::gauge!("lidi_receive_clients_queue_len").set(self.for_clients.len() as f64);
 
-            if let Ok(mut ended) = self.ended_transfers.lock() {
-                ended.retain(|client_id, client_sendq| {
-                    let retain = !client_sendq.is_empty();
-                    if !retain {
-                        log::debug!("purging ended transfer of client {client_id:x}");
-                    }
-                    retain
-                });
-                metrics::gauge!("lidi_receive_ended_transfers_retained").set(ended.len() as f64);
-            }
+            metrics::gauge!("lidi_receive_active_transfers_len")
+                .set(self.active_transfers.len() as f64);
 
             let (total, max) =
                 self.active_transfers
@@ -341,10 +324,6 @@ where
             to_clients,
             for_clients,
             active_transfers: dashmap::DashMap::new(),
-            #[cfg(feature = "prometheus")]
-            ended_transfers: std::sync::Arc::new(std::sync::Mutex::new(
-                std::collections::HashMap::new(),
-            )),
             #[cfg(feature = "prometheus")]
             reblock_queues: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
             client_new,

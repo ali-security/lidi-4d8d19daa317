@@ -30,33 +30,39 @@ where
     loop {
         let block = for_client.recv()?;
 
-        let block_type = block.block_type()?;
-
-        if matches!(block_type, protocol::BlockType::Abort) {
-            log::warn!("client {client_id:x}: aborting transfer");
-            (receiver.client_end)(client, false);
-            return Ok(());
-        }
-
         let payload = block.payload();
 
-        if !payload.is_empty() {
-            log::trace!("client {client_id:x}: payload {} bytes", payload.len());
+        log::trace!("client {client_id:x}: payload {} bytes", payload.len());
 
-            transmitted += payload.len();
+        match block.block_type()? {
+            protocol::BlockType::Data => {
+                transmitted += payload.len();
 
-            client.write_all(payload)?;
-            if endpoint_options.flush {
-                client.flush()?;
+                client.write_all(payload)?;
+                if endpoint_options.flush {
+                    client.flush()?;
+                }
             }
-        }
+            protocol::BlockType::End => {
+                transmitted += payload.len();
 
-        if matches!(block_type, protocol::BlockType::End) {
-            log::info!("client {client_id:x}: finished transfer, {transmitted} bytes transmitted");
+                client.write_all(payload)?;
+                client.flush()?;
 
-            client.flush()?;
-            (receiver.client_end)(client, true);
-            return Ok(());
+                log::info!(
+                    "client {client_id:x}: finished transfer, {transmitted} bytes transmitted"
+                );
+                (receiver.client_end)(client, true);
+                break;
+            }
+            protocol::BlockType::Abort => {
+                log::warn!("client {client_id:x}: aborting transfer");
+                (receiver.client_end)(client, false);
+                break;
+            }
+            protocol::BlockType::Start | protocol::BlockType::Heartbeat => (),
         }
     }
+
+    Ok(())
 }

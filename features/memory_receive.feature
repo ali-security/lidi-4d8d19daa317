@@ -84,7 +84,7 @@ Feature: Memory stability of lidi-receive under congestion
     Then lidi-file-receive file tsr6.bin in 15 seconds
     And the receiver log does not contain abort_timeout trigger
 
-  Scenario: T-SR7 - Completed transfers are cleaned up from ended_transfers
+  Scenario: T-SR7 - Completed transfers are cleaned up from active_transfers
     Given lidi is started with max throughput of 100mbit
     When lidi-file-send file tsr7a.bin of size 5MB
     And lidi-file-receive file tsr7a.bin in 10 seconds
@@ -92,7 +92,7 @@ Feature: Memory stability of lidi-receive under congestion
     And lidi-file-receive file tsr7b.bin in 10 seconds
     And lidi-file-send file tsr7c.bin of size 5MB
     And lidi-file-receive file tsr7c.bin in 10 seconds
-    Then the receiver Prometheus gauge lidi_receive_ended_transfers_retained is less than or equal to 1
+    Then the receiver Prometheus gauge lidi_receive_active_transfers_len is less than or equal to 1
 
 
   # ============================================================================

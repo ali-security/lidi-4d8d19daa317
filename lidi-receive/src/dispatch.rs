@@ -120,8 +120,6 @@ pub fn start<ClientNew, ClientEnd>(
             }
 
             protocol::BlockType::Data | protocol::BlockType::Abort | protocol::BlockType::End => {
-                let is_end = matches!(block_type, protocol::BlockType::End);
-
                 match receiver.active_transfers.entry(client_id) {
                     dashmap::Entry::Occupied(oe) => {
                         if let Err(e) = oe.get().try_send(block) {
@@ -129,12 +127,6 @@ pub fn start<ClientNew, ClientEnd>(
                             metrics::counter!("lidi_receive_client_queue_full").increment(1);
                             log::error!("failed to send block to client {client_id:x}: {e}");
                             oe.remove();
-                        } else if is_end {
-                            let client_sendq = oe.remove();
-                            #[cfg(feature = "prometheus")]
-                            if let Ok(mut ended) = receiver.ended_transfers.lock() {
-                                ended.insert(client_id, client_sendq);
-                            }
                         }
                     }
                     dashmap::Entry::Vacant(_) => match pending_start.entry(client_id) {
@@ -144,12 +136,6 @@ pub fn start<ClientNew, ClientEnd>(
                                 metrics::counter!("lidi_receive_client_queue_full").increment(1);
                                 log::error!("failed to send block to client {client_id:x}: {e}");
                                 oe.remove();
-                            } else if is_end {
-                                let (client_sendq, _) = oe.remove();
-                                #[cfg(feature = "prometheus")]
-                                if let Ok(mut ended) = receiver.ended_transfers.lock() {
-                                    ended.insert(client_id, client_sendq);
-                                }
                             }
                         }
                         collections::hash_map::Entry::Vacant(ve) => {
@@ -172,14 +158,7 @@ pub fn start<ClientNew, ClientEnd>(
                                 })
                                 .is_ok()
                             {
-                                if is_end {
-                                    #[cfg(feature = "prometheus")]
-                                    if let Ok(mut ended) = receiver.ended_transfers.lock() {
-                                        ended.insert(client_id, client_sendq);
-                                    }
-                                } else {
-                                    ve.insert((client_sendq, client_recvq));
-                                }
+                                ve.insert((client_sendq, client_recvq));
                             }
                         }
                     },

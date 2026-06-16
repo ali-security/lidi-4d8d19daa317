@@ -20,6 +20,8 @@ where
     let mut expected_sequence_number = 1; // 0 is consumed by the Start
     let mut parked = collections::HashMap::new();
 
+    let mut transmitted = 0;
+
     #[cfg(not(feature = "hash"))]
     if hash {
         log::warn!("hash was not enabled at compilation, ignoring this parameter");
@@ -77,6 +79,12 @@ where
             hasher.update(block.payload());
         }
 
+        let payload = block.payload();
+
+        transmitted += payload.len();
+
+        log::trace!("client {client_id:x}: payload {} bytes", payload.len());
+
         let block_type = block.block_type()?;
 
         to_client.send(block)?;
@@ -90,6 +98,15 @@ where
                 let hash = hasher.finalize();
                 log::info!("client {client_id:x}: hash is {hash:x}");
             }
+
+            if matches!(block_type, protocol::BlockType::Abort) {
+                log::warn!("client {client_id:x}: aborting transfer");
+            } else {
+                log::info!(
+                    "client {client_id:x}: finished transfer, {transmitted} bytes transmitted"
+                );
+            }
+
             break;
         }
 

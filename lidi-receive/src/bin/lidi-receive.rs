@@ -22,6 +22,17 @@ enum Client {
 }
 
 impl Write for Client {
+    fn write_all(&mut self, buf: &[u8]) -> Result<(), io::Error> {
+        match self {
+            #[cfg(feature = "to-tcp")]
+            Self::Tcp(socket) => socket.write_all(buf),
+            #[cfg(feature = "to-tls")]
+            Self::Tls(socket) => socket.write_all(buf),
+            #[cfg(feature = "to-unix")]
+            Self::Unix(socket) => socket.write_all(buf),
+        }
+    }
+
     fn write(&mut self, buf: &[u8]) -> Result<usize, io::Error> {
         match self {
             #[cfg(feature = "to-tcp")]

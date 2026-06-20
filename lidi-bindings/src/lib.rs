@@ -28,6 +28,7 @@ pub unsafe extern "C" fn diode_new_config(
     let config = Box::new(clients::file::Config {
         diode: clients::DiodeSend::Tcp(socket_addr),
         buffer_size: buffer_size as usize,
+        #[cfg(feature = "hash")]
         hash: false,
         max_files: 0,
         overwrite: false,
@@ -103,6 +104,7 @@ pub unsafe extern "C" fn diode_receive_files(
             from_unix,
         },
         buffer_size: config.buffer_size,
+        #[cfg(feature = "hash")]
         hash: false,
         max_files: 0,
         overwrite: false,

@@ -5,6 +5,16 @@ use std::{io, net, os::fd::AsRawFd};
 #[cfg(any(feature = "send-msg", feature = "send-mmsg"))]
 use std::{mem, pin};
 
+#[cfg(all(feature = "send-mmsg", not(target_os = "freebsd")))]
+type MmsgLenType = u32;
+#[cfg(all(feature = "send-mmsg", target_os = "freebsd"))]
+type MmsgLenType = isize;
+
+#[cfg(all(feature = "send-mmsg", not(target_os = "freebsd")))]
+type SendMmsgLenType = u32;
+#[cfg(all(feature = "send-mmsg", target_os = "freebsd"))]
+type SendMmsgLenType = usize;
+
 pub fn get_socket_send_buffer_size<S: AsRawFd>(socket: &S) -> Result<i32, io::Error> {
     socket::getsockopt_buffer_size(socket.as_raw_fd(), libc::SO_SNDBUF)
 }
@@ -179,13 +189,14 @@ impl Send {
                     let to_send = datagrams.len();
 
                     for (i, datagram) in datagrams.iter_mut().enumerate() {
-                        mmsghdr[i].msg_len =
-                            u32::try_from(datagram.len()).map_err(|e: num::TryFromIntError| {
+                        mmsghdr[i].msg_len = MmsgLenType::try_from(datagram.len()).map_err(
+                            |e: num::TryFromIntError| {
                                 io::Error::new(
                                     io::ErrorKind::InvalidData,
                                     format!("datagram.len(): {e}"),
                                 )
-                            })?;
+                            },
+                        )?;
                         iovecs[i].iov_base = datagram.as_mut_ptr().cast::<libc::c_void>();
                         iovecs[i].iov_len = datagram.len();
                     }
@@ -194,7 +205,7 @@ impl Send {
                         libc::sendmmsg(
                             socket.as_raw_fd(),
                             mmsghdr.as_mut_ptr(),
-                            u32::try_from(to_send).map_err(|e| {
+                            SendMmsgLenType::try_from(to_send).map_err(|e| {
                                 io::Error::new(io::ErrorKind::InvalidData, format!("to_send: {e}"))
                             })?,
                             0,

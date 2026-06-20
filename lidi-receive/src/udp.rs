@@ -51,7 +51,9 @@ pub fn start<ClientNew, ClientEnd>(
     let buffer_size = i32::try_from(buffer_size)
         .map_err(|e| crate::Error::Internal(format!("nb_packets: {e}")))?;
 
-    socket::set_socket_recv_buffer_size(&socket, buffer_size)?;
+    if let Err(e) = socket::set_socket_recv_buffer_size(&socket, buffer_size) {
+        log::warn!("failed to set socket recv buffer size: {e}");
+    }
     let sock_buffer_size = socket::get_socket_recv_buffer_size(&socket)?;
     log::info!("UDP socket receive buffer size set to {sock_buffer_size}");
 

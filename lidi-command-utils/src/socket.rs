@@ -1,6 +1,11 @@
 use std::{io, mem, net, pin, ptr};
 
-pub const MAX_MMSG_BATCH_SIZE: u32 = 1024;
+#[cfg(not(target_os = "freebsd"))]
+type TypeConstMmsgBatchSize = u32;
+#[cfg(target_os = "freebsd")]
+type TypeConstMmsgBatchSize = usize;
+
+pub const MAX_MMSG_BATCH_SIZE: TypeConstMmsgBatchSize = 1024;
 
 pub fn convert_address(
     dest: net::SocketAddr,
@@ -16,6 +21,8 @@ pub fn convert_address(
                 },
                 sin_port: addr4.port().to_be(),
                 sin_zero: [0; 8],
+                #[cfg(target_os = "freebsd")]
+                sin_len: 0,
             };
             let addr = Box::new(addr);
             (
@@ -39,6 +46,8 @@ pub fn convert_address(
                     s6_addr: addr6.ip().octets(),
                 },
                 sin6_scope_id: addr6.scope_id(),
+                #[cfg(target_os = "freebsd")]
+                sin6_len: 0,
             };
             let addr = Box::new(addr);
             (
@@ -72,7 +81,10 @@ pub fn getsockopt_buffer_size(fd: i32, option_name: i32) -> Result<i32, io::Erro
     if res == 0 {
         Ok(sz)
     } else {
+        #[cfg(not(target_os = "freebsd"))]
         let errno = unsafe { *libc::__errno_location() };
+        #[cfg(target_os = "freebsd")]
+        let errno = unsafe { *libc::__error() };
         Err(io::Error::other(format!(
             "libc::getsockopt returned {res}, errno == {errno}",
         )))
@@ -96,7 +108,10 @@ pub fn setsockopt_buffer_size(fd: i32, size: i32, option_name: i32) -> Result<()
     if res == 0 {
         Ok(())
     } else {
+        #[cfg(not(target_os = "freebsd"))]
         let errno = unsafe { *libc::__errno_location() };
+        #[cfg(target_os = "freebsd")]
+        let errno = unsafe { *libc::__error() };
         Err(io::Error::other(format!(
             "libc::setsockopt returned {res}, errno == {errno}",
         )))

@@ -90,7 +90,10 @@ impl ReceiveMsg {
         let recv = unsafe { libc::recvmsg(self.socket.as_raw_fd(), &raw mut self.msghdr, 0) };
 
         if recv < 0 {
+            #[cfg(not(target_os = "freebsd"))]
             let errno = unsafe { *libc::__errno_location() };
+            #[cfg(target_os = "freebsd")]
+            let errno = unsafe { *libc::__error() };
             return Err(io::Error::other(format!(
                 "libc::recvmsg {recv} != {}, (errno == {errno})",
                 self.udp_packet_size
@@ -156,7 +159,10 @@ impl ReceiveMmsg {
         };
 
         if nb_msg == -1 {
+            #[cfg(not(target_os = "freebsd"))]
             let errno = unsafe { *libc::__errno_location() };
+            #[cfg(target_os = "freebsd")]
+            let errno = unsafe { *libc::__error() };
             Err(io::Error::other(format!("libc::recvmmsg, errno = {errno}")))
         } else {
             let nb_msg = usize::try_from(nb_msg)

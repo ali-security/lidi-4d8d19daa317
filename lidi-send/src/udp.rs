@@ -18,7 +18,9 @@ pub fn start<C>(
     let buffer_size = i32::try_from(buffer_size)
         .map_err(|e| crate::Error::Internal(format!("too large buffer size: {e}")))?;
 
-    socket::set_socket_send_buffer_size(&socket, buffer_size)?;
+    if let Err(e) = socket::set_socket_send_buffer_size(&socket, buffer_size) {
+        log::warn!("failed to set socket send buffer size: {e}");
+    }
     let sock_buffer_size = socket::get_socket_send_buffer_size(&socket)?;
     log::info!("UDP socket send buffer size set to {sock_buffer_size}");
 

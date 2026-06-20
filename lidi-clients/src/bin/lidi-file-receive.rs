@@ -121,9 +121,12 @@ fn main() {
         };
 
         if unsafe { libc::chroot(c_output_directory.as_ptr()) } != 0 {
+            #[cfg(not(target_os = "freebsd"))]
+            let errno = unsafe { *libc::__errno_location() };
+            #[cfg(target_os = "freebsd")]
+            let errno = unsafe { *libc::__error() };
             let err_str =
-                unsafe { std::ffi::CStr::from_ptr(libc::strerror(*libc::__errno_location())) }
-                    .to_string_lossy();
+                unsafe { std::ffi::CStr::from_ptr(libc::strerror(errno)) }.to_string_lossy();
             log::error!(
                 "failed to chroot in {}: {err_str}",
                 args.output_directory.display()

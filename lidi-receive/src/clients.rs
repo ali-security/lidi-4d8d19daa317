@@ -1,19 +1,15 @@
 //! Worker that acquires multiplex access and then becomes a `crate::receive::client` worker
 
-use crate::{client, client_reorder};
-use lidi_command_utils::config;
+use crate::{ClientLifecycle, client, client_reorder};
 use lidi_protocol as protocol;
-use std::{io::Write, os::fd::AsRawFd, thread};
+use std::thread;
 
-pub fn start<C, ClientNew, ClientEnd, E>(
-    receiver: &crate::Receiver<ClientNew, ClientEnd>,
+pub fn start<Lifecycle>(
+    receiver: &crate::Receiver<Lifecycle>,
     thread_number: u32,
 ) -> Result<(), crate::Error>
 where
-    C: Write + AsRawFd,
-    ClientNew: Send + Sync + Fn(&config::Endpoint, protocol::ClientId) -> Result<C, E>,
-    ClientEnd: Send + Sync + Fn(C, bool),
-    E: Into<crate::Error>,
+    Lifecycle: ClientLifecycle,
 {
     loop {
         let (endpoint_id, client_id, recvq) = receiver.for_clients.recv()?;

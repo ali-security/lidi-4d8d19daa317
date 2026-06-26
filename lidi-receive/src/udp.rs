@@ -1,13 +1,13 @@
 //! Worker that actually receives packets from the UDP diode link
 
-use crate::socket;
+use crate::{ClientLifecycle, socket};
 use std::{
     io,
     net::{self, ToSocketAddrs},
 };
 
-pub fn start<ClientNew, ClientEnd>(
-    receiver: &crate::Receiver<ClientNew, ClientEnd>,
+pub fn start<Lifecycle>(
+    receiver: &crate::Receiver<Lifecycle>,
     port: u16,
     #[cfg(not(feature = "receive-mmsg"))] to_reblock: &crossbeam_channel::Sender<
         raptorq::EncodingPacket,
@@ -15,7 +15,10 @@ pub fn start<ClientNew, ClientEnd>(
     #[cfg(feature = "receive-mmsg")] to_reblock: &crossbeam_channel::Sender<
         Vec<raptorq::EncodingPacket>,
     >,
-) -> Result<(), crate::Error> {
+) -> Result<(), crate::Error>
+where
+    Lifecycle: ClientLifecycle,
+{
     let addresses = (receiver.config.from.as_str(), 0)
         .to_socket_addrs()
         .map_err(|e| {

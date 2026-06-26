@@ -1,15 +1,17 @@
 //! Worker that manages active transfers queue and dispatch incoming [`crate::protocol`]
 //! blocks to clients
 
+use crate::ClientLifecycle;
 use lidi_protocol as protocol;
 #[cfg(feature = "heartbeat")]
 use std::time;
 use std::{collections, thread};
 
 #[allow(clippy::too_many_lines)]
-pub fn start<ClientNew, ClientEnd>(
-    receiver: &crate::Receiver<ClientNew, ClientEnd>,
-) -> Result<(), crate::Error> {
+pub fn start<Lifecycle>(receiver: &crate::Receiver<Lifecycle>) -> Result<(), crate::Error>
+where
+    Lifecycle: ClientLifecycle,
+{
     #[cfg(feature = "heartbeat")]
     let mut last_heartbeat = time::Instant::now();
     #[cfg(feature = "heartbeat")]

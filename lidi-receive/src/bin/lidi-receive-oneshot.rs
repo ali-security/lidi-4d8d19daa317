@@ -2,6 +2,30 @@ use lidi_command_utils::config;
 use lidi_protocol as protocol;
 use std::{io, process, thread};
 
+struct Lifecycle {}
+
+impl lidi_receive::ClientLifecycle for Lifecycle {
+    fn start(
+        &self,
+        _endpoint: &lidi_command_utils::config::Endpoint,
+        _client_id: protocol::ClientId,
+    ) -> Result<Box<dyn lidi_receive::Client>, lidi_receive::Error> {
+        Ok(Box::new(io::stdout()))
+    }
+
+    fn end(
+        &self,
+        _client: Box<dyn lidi_receive::Client>,
+        ok: bool,
+    ) -> Result<(), lidi_receive::Error> {
+        if ok {
+            process::exit(0);
+        } else {
+            process::exit(1);
+        }
+    }
+}
+
 fn main() {
     let config = match lidi_command_utils::command_arguments(
         lidi_command_utils::Role::Receive,
@@ -33,18 +57,9 @@ fn main() {
     config.common.max_clients = Some(1);
     config.common.heartbeat = None;
 
-    let receiver = match lidi_receive::Receiver::new(
-        &config,
-        raptorq,
-        |_, _| Ok::<_, io::Error>(io::stdout()),
-        |_, ok| {
-            if ok {
-                process::exit(0);
-            } else {
-                process::exit(1);
-            }
-        },
-    ) {
+    let lifecycle = Lifecycle {};
+
+    let receiver = match lidi_receive::Receiver::new(&config, raptorq, lifecycle) {
         Ok(receiver) => receiver,
         Err(e) => {
             log::error!("{e}");

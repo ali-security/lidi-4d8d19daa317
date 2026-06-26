@@ -6,71 +6,19 @@ use lidi_protocol as protocol;
 use std::net;
 #[cfg(feature = "to-unix")]
 use std::os::unix;
-use std::{
-    io::{self, Write},
-    os::fd::AsRawFd,
-    thread,
-};
+use std::thread;
 
-enum Client {
-    #[cfg(feature = "to-tcp")]
-    Tcp(net::TcpStream),
+struct Lifecycle {
     #[cfg(feature = "to-tls")]
-    Tls(tls::TcpStream),
-    #[cfg(feature = "to-unix")]
-    Unix(unix::net::UnixStream),
+    tls: lidi_command_utils::tls::ClientContext,
 }
 
-impl Write for Client {
-    fn write_all(&mut self, buf: &[u8]) -> Result<(), io::Error> {
-        match self {
-            #[cfg(feature = "to-tcp")]
-            Self::Tcp(socket) => socket.write_all(buf),
-            #[cfg(feature = "to-tls")]
-            Self::Tls(socket) => socket.write_all(buf),
-            #[cfg(feature = "to-unix")]
-            Self::Unix(socket) => socket.write_all(buf),
-        }
-    }
-
-    fn write(&mut self, buf: &[u8]) -> Result<usize, io::Error> {
-        match self {
-            #[cfg(feature = "to-tcp")]
-            Self::Tcp(socket) => socket.write(buf),
-            #[cfg(feature = "to-tls")]
-            Self::Tls(socket) => socket.write(buf),
-            #[cfg(feature = "to-unix")]
-            Self::Unix(socket) => socket.write(buf),
-        }
-    }
-
-    fn flush(&mut self) -> Result<(), io::Error> {
-        match self {
-            #[cfg(feature = "to-tcp")]
-            Self::Tcp(socket) => socket.flush(),
-            #[cfg(feature = "to-tls")]
-            Self::Tls(socket) => socket.flush(),
-            #[cfg(feature = "to-unix")]
-            Self::Unix(socket) => socket.flush(),
-        }
-    }
-}
-
-impl AsRawFd for Client {
-    fn as_raw_fd(&self) -> i32 {
-        match self {
-            #[cfg(feature = "to-tcp")]
-            Self::Tcp(socket) => socket.as_raw_fd(),
-            #[cfg(feature = "to-tls")]
-            Self::Tls(socket) => socket.as_raw_fd(),
-            #[cfg(feature = "to-unix")]
-            Self::Unix(socket) => socket.as_raw_fd(),
-        }
-    }
-}
-
-impl Client {
-    fn new(endpoint: &lidi_command_utils::config::Endpoint) -> Result<Self, lidi_receive::Error> {
+impl lidi_receive::ClientLifecycle for Lifecycle {
+    fn start(
+        &self,
+        endpoint: &lidi_command_utils::config::Endpoint,
+        _client_id: protocol::ClientId,
+    ) -> Result<Box<dyn lidi_receive::Client>, lidi_receive::Error> {
         match endpoint {
             lidi_command_utils::config::Endpoint::Tcp { address, .. } => {
                 #[cfg(not(feature = "to-tcp"))]
@@ -84,15 +32,23 @@ impl Client {
                 #[cfg(feature = "to-tcp")]
                 {
                     let client = net::TcpStream::connect(address)?;
-                    Ok(Self::Tcp(client))
+                    Ok(Box::new(client))
                 }
             }
             lidi_command_utils::config::Endpoint::Tls { address, .. } => {
-                let _ = address;
-                Err(lidi_receive::Error::Io(io::Error::new(
-                    io::ErrorKind::Unsupported,
-                    "Tls endpoint not available (was not enabled at compilation)",
-                )))
+                #[cfg(not(feature = "to-tls"))]
+                {
+                    let _ = address;
+                    Err(lidi_receive::Error::Io(io::Error::new(
+                        io::ErrorKind::Unsupported,
+                        "TLS endpoint not available (was not enabled at compilation)",
+                    )))
+                }
+                #[cfg(feature = "to-tls")]
+                {
+                    let client = tls::TcpStream::connect(&self.tls, address)?;
+                    Ok(Box::new(client))
+                }
             }
             lidi_command_utils::config::Endpoint::Unix { path, .. } => {
                 #[cfg(not(feature = "to-unix"))]
@@ -106,24 +62,18 @@ impl Client {
                 #[cfg(feature = "to-unix")]
                 {
                     let client = unix::net::UnixStream::connect(path)?;
-                    Ok(Self::Unix(client))
+                    Ok(Box::new(client))
                 }
             }
         }
     }
 
-    #[cfg(feature = "to-tls")]
-    fn new_with_tls(
-        tls: &lidi_command_utils::tls::ClientContext,
-        endpoint: &lidi_command_utils::config::Endpoint,
-    ) -> Result<Self, lidi_receive::Error> {
-        match endpoint {
-            lidi_command_utils::config::Endpoint::Tls { address, .. } => {
-                let client = tls::TcpStream::connect(tls, address)?;
-                Ok(Self::Tls(client))
-            }
-            e => Self::new(e),
-        }
+    fn end(
+        &self,
+        _client: Box<dyn lidi_receive::Client>,
+        _ok: bool,
+    ) -> Result<(), lidi_receive::Error> {
+        Ok(())
     }
 }
 
@@ -179,21 +129,12 @@ fn main() {
         }
     };
 
-    let receiver = match lidi_receive::Receiver::new(
-        &config,
-        raptorq,
-        |endpoint, _| {
-            #[cfg(not(feature = "to-tls"))]
-            {
-                Client::new(endpoint)
-            }
-            #[cfg(feature = "to-tls")]
-            {
-                Client::new_with_tls(&tls, endpoint)
-            }
-        },
-        |_, _| (),
-    ) {
+    let lifecycle = Lifecycle {
+        #[cfg(feature = "to-tls")]
+        tls,
+    };
+
+    let receiver = match lidi_receive::Receiver::new(&config, raptorq, lifecycle) {
         Ok(receiver) => receiver,
         Err(e) => {
             log::error!("{e}");

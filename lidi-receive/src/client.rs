@@ -1,21 +1,19 @@
 //! Worker that writes decoded and reordered messages to client
 
+use crate::ClientLifecycle;
 use lidi_command_utils::config;
 use lidi_protocol as protocol;
-use std::{io::Write, os::fd::AsRawFd};
+use std::io::Write;
 
-pub fn start<C, ClientNew, ClientEnd, E>(
-    receiver: &crate::Receiver<ClientNew, ClientEnd>,
+pub fn start<Lifecycle>(
+    receiver: &crate::Receiver<Lifecycle>,
     endpoint_id: protocol::EndpointId,
     endpoint: &config::Endpoint,
     client_id: protocol::ClientId,
     for_client: &crossbeam_channel::Receiver<protocol::Block>,
 ) -> Result<(), crate::Error>
 where
-    C: Write + AsRawFd,
-    ClientNew: Send + Sync + Fn(&config::Endpoint, protocol::ClientId) -> Result<C, E>,
-    ClientEnd: Send + Sync + Fn(C, bool),
-    E: Into<crate::Error>,
+    Lifecycle: ClientLifecycle,
 {
     let endpoint_options = endpoint.options();
 
@@ -23,7 +21,7 @@ where
         "client {client_id:x}: starting transfer to endpoint {endpoint_id} ({endpoint_options})"
     );
 
-    let mut client = (receiver.client_new)(endpoint, client_id).map_err(Into::into)?;
+    let mut client = receiver.client_lifecycle.start(endpoint, client_id)?;
 
     loop {
         let block = for_client.recv()?;
@@ -40,11 +38,15 @@ where
             protocol::BlockType::End => {
                 client.write_all(payload)?;
                 client.flush()?;
-                (receiver.client_end)(client, true);
+                if let Err(e) = receiver.client_lifecycle.end(client, true) {
+                    log::error!("client {client_id:x}: {e}");
+                }
                 break;
             }
             protocol::BlockType::Abort => {
-                (receiver.client_end)(client, false);
+                if let Err(e) = receiver.client_lifecycle.end(client, false) {
+                    log::error!("client {client_id:x}: {e}");
+                }
                 break;
             }
             protocol::BlockType::Start | protocol::BlockType::Heartbeat => (),

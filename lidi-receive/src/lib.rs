@@ -29,13 +29,9 @@ use lidi_command_utils::config;
 #[cfg(feature = "to-tls")]
 use lidi_command_utils::tls;
 use lidi_protocol as protocol;
-use std::{
-    fmt,
-    io::{self, Write},
-    net,
-    os::fd::AsRawFd,
-    thread, time,
-};
+#[cfg(feature = "to-unix")]
+use std::os::unix;
+use std::{fmt, io, net, os, thread, time};
 
 mod client;
 mod client_reorder;
@@ -227,7 +223,10 @@ impl From<&config::ReceiveConfig> for Config {
 
 /// An instance of this data structure is shared by workers to synchronize them and to access
 /// communication channels
-pub struct Receiver<ClientNew, ClientEnd> {
+pub struct Receiver<Lifecycle>
+where
+    Lifecycle: ClientLifecycle,
+{
     config: Config,
     raptorq: protocol::RaptorQ,
     to_dispatch: crossbeam_channel::Sender<Option<protocol::Block>>,
@@ -251,16 +250,35 @@ pub struct Receiver<ClientNew, ClientEnd> {
     reblock_queues: std::sync::Arc<
         std::sync::Mutex<Vec<crossbeam_channel::Receiver<Vec<raptorq::EncodingPacket>>>>,
     >,
-    client_new: ClientNew,
-    client_end: ClientEnd,
+    client_lifecycle: Lifecycle,
 }
 
-impl<C, ClientNew, ClientEnd, E> Receiver<ClientNew, ClientEnd>
+pub trait Client: io::Write + os::fd::AsRawFd {}
+
+impl Client for io::Stdout {}
+
+#[cfg(feature = "to-tcp")]
+impl Client for net::TcpStream {}
+
+#[cfg(feature = "to-tls")]
+impl Client for tls::TcpStream {}
+
+#[cfg(feature = "to-unix")]
+impl Client for unix::net::UnixStream {}
+
+pub trait ClientLifecycle: Send + Sync {
+    fn start(
+        &self,
+        endpoint: &config::Endpoint,
+        client_id: protocol::ClientId,
+    ) -> Result<Box<dyn Client>, Error>;
+
+    fn end(&self, client: Box<dyn Client>, ok: bool) -> Result<(), Error>;
+}
+
+impl<Lifecycle> Receiver<Lifecycle>
 where
-    C: Write + AsRawFd,
-    ClientNew: Send + Sync + Fn(&config::Endpoint, protocol::ClientId) -> Result<C, E>,
-    ClientEnd: Send + Sync + Fn(C, bool),
-    E: Into<Error>,
+    Lifecycle: ClientLifecycle,
 {
     #[cfg(feature = "prometheus")]
     #[allow(clippy::cast_precision_loss)]
@@ -302,8 +320,7 @@ where
     pub fn new(
         config: &config::ReceiveConfig,
         raptorq: protocol::RaptorQ,
-        client_new: ClientNew,
-        client_end: ClientEnd,
+        client_lifecycle: Lifecycle,
     ) -> Result<Self, Error> {
         let config = Config::from(config);
 
@@ -326,8 +343,7 @@ where
             active_transfers: dashmap::DashMap::new(),
             #[cfg(feature = "prometheus")]
             reblock_queues: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
-            client_new,
-            client_end,
+            client_lifecycle,
         })
     }
 

@@ -1,6 +1,7 @@
 //! Worker for grouping packets according to their block numbers to handle potential UDP packets
 //! reordering
 
+use crate::ClientLifecycle;
 use lidi_protocol as protocol;
 use std::{array, mem};
 
@@ -11,11 +12,14 @@ struct Block {
     packets: Vec<raptorq::EncodingPacket>,
 }
 
-fn send_to_decode<ClientNew, ClientEnd>(
-    receiver: &crate::Receiver<ClientNew, ClientEnd>,
+fn send_to_decode<Lifecycle>(
+    receiver: &crate::Receiver<Lifecycle>,
     id: u8,
     blocks: &mut [Block],
-) -> Result<bool, crate::Error> {
+) -> Result<bool, crate::Error>
+where
+    Lifecycle: ClientLifecycle,
+{
     blocks[id as usize].ignore = true;
 
     let capacity = blocks[id as usize].packets.capacity();
@@ -74,15 +78,18 @@ fn send_to_decode<ClientNew, ClientEnd>(
     Ok(false)
 }
 
-pub fn start<ClientNew, ClientEnd>(
-    receiver: &crate::Receiver<ClientNew, ClientEnd>,
+pub fn start<Lifecycle>(
+    receiver: &crate::Receiver<Lifecycle>,
     #[cfg(not(feature = "receive-mmsg"))] for_reblock: &crossbeam_channel::Receiver<
         raptorq::EncodingPacket,
     >,
     #[cfg(feature = "receive-mmsg")] for_reblock: &crossbeam_channel::Receiver<
         Vec<raptorq::EncodingPacket>,
     >,
-) -> Result<(), crate::Error> {
+) -> Result<(), crate::Error>
+where
+    Lifecycle: ClientLifecycle,
+{
     let min_nb_packets = usize::try_from(receiver.raptorq.min_nb_packets())
         .map_err(|e| crate::Error::Internal(format!("min_nb_packets: {e}")))?;
     let nb_packets = usize::try_from(receiver.raptorq.nb_packets())

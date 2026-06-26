@@ -1,10 +1,9 @@
-use std::{collections, io::Write, os::fd::AsRawFd};
-
-use lidi_command_utils::config;
+use crate::ClientLifecycle;
 use lidi_protocol as protocol;
+use std::collections;
 
-pub fn start<C, ClientNew, ClientEnd, E>(
-    receiver: &crate::Receiver<ClientNew, ClientEnd>,
+pub fn start<Lifecycle>(
+    receiver: &crate::Receiver<Lifecycle>,
     thread_number: u32,
     client_id: protocol::ClientId,
     recvq: &crossbeam_channel::Receiver<protocol::Block>,
@@ -12,10 +11,7 @@ pub fn start<C, ClientNew, ClientEnd, E>(
     hash: bool,
 ) -> Result<(), crate::Error>
 where
-    C: Write + AsRawFd,
-    ClientNew: Send + Sync + Fn(&config::Endpoint, protocol::ClientId) -> Result<C, E>,
-    ClientEnd: Send + Sync + Fn(C, bool),
-    E: Into<crate::Error>,
+    Lifecycle: ClientLifecycle,
 {
     let mut expected_sequence_number = 1; // 0 is consumed by the Start
     let mut parked = collections::HashMap::new();

@@ -251,6 +251,7 @@ def send_file_command(context, filename, background=False):
 
 def send_file(context, name, size, background=False):
     """Send a file with specified name and size."""
+    name = name.strip('"')
     # Create file in send directory
     filename = os.path.join(context.send_dir, name)
     create_file(context, filename, size)

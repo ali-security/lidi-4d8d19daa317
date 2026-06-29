@@ -35,6 +35,27 @@ from features.steps.tc_shaper import TcUdpShaper
 from features.steps.utils import stop_process, nice
 
 
+def wait_for_udp_port_free(port, timeout=2.0):
+    """Return when ss confirms the UDP port is no longer bound.
+
+    After SIGKILL, the kernel releases UDP sockets immediately; in practice
+    the loop exits on the first iteration.  The 2-second timeout is a safety
+    net for slow CI environments.
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            result = subprocess.run(
+                ['ss', '-ulnH', f'sport = :{port}'],
+                capture_output=True, text=True, timeout=0.5,
+            )
+            if not result.stdout.strip():
+                return
+        except OSError:
+            return
+        time.sleep(0.05)
+
+
 def wait_for_port_bound(port, tcp=True, timeout=5.0, proc=None):
     """Return True when ss shows the port is listening/bound.
 

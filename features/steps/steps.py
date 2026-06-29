@@ -10,6 +10,7 @@ import logging
 from features.steps.slow_client import (
     SlowTcpClient, get_process_memory_mb, monitor_process_memory,
     find_thread_tid, starve_thread_via_cpu_pinning,
+    ptrace_stop_thread, ptrace_resume_thread,
 )
 
 log = logging.getLogger(__name__)
@@ -148,8 +149,8 @@ def step_lidi_send_started(context):
 @when('lidi-receive is restarted')
 def step_impl(context):
     stop_lidi_receive(context)
-    # wait some time to prevent address already in use if restarted too quickly
-    time.sleep(5)
+    from features.steps.lidi import wait_for_udp_port_free
+    wait_for_udp_port_free(getattr(context, '_lidi_receive_udp_port', 5000))
     start_lidi_receive(context)
 
 @given('lidi-send is restarted')
@@ -285,7 +286,7 @@ def step_impl(context, name, size):
     # transfer is in progress, wait 1 second then restart diode
     time.sleep(3)
     stop_lidi_receive(context)
-    time.sleep(5)
+    time.sleep(2.5)
     start_lidi_receive(context)
 
 @then('lidi-file-receive file {name} in {seconds} seconds')
@@ -2480,29 +2481,36 @@ def step_verify_sender_prometheus_gauge_lte(context, metric, value):
 
 @then('the receiver Prometheus gauge {metric} is less than or equal to {value:d}')
 def step_verify_receiver_prometheus_gauge_lte(context, metric, value):
-    """Verify that a receiver Prometheus gauge has a value <= the expected amount."""
+    """Verify that a receiver Prometheus gauge has a value <= the expected amount.
+
+    Polls for up to 3 seconds because the metrics_loop in lib.rs updates gauges
+    every 1 second; a single snapshot read would race against that update cycle.
+    """
     import urllib.request
 
     url = 'http://127.0.0.1:9002/metrics'
-    try:
-        response = urllib.request.urlopen(url, timeout=2)
-        content = response.read().decode('utf-8')
+    deadline = time.time() + 3.0
+    last_value = None
 
-        # Parse the metric value from Prometheus text format
-        found = False
-        for line in content.split('\n'):
-            if line.startswith(metric) and not line.startswith('#'):
-                parts = line.split()
-                if len(parts) >= 2:
-                    metric_value = int(float(parts[-1]))
-                    found = True
-                    assert metric_value <= value, \
-                        f"Expected {metric} <= {value}, got {metric_value}"
-                    break
+    while time.time() < deadline:
+        try:
+            response = urllib.request.urlopen(url, timeout=2)
+            content = response.read().decode('utf-8')
+            for line in content.split('\n'):
+                if line.startswith(metric) and not line.startswith('#'):
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        last_value = int(float(parts[-1]))
+                        if last_value <= value:
+                            return
+                        break
+        except Exception:
+            pass
+        time.sleep(0.2)
 
-        assert found, f"Metric {metric} not found in Prometheus receiver endpoint"
-    except Exception as e:
-        raise AssertionError(f"Failed to verify receiver gauge {metric}: {e}")
+    if last_value is None:
+        raise AssertionError(f"Metric {metric} not found in Prometheus receiver endpoint")
+    raise AssertionError(f"Expected {metric} <= {value}, got {last_value} (after 3s)")
 
 # Slow client memory stress test steps
 
@@ -2769,6 +2777,56 @@ _PIPELINE_GAUGES = [
     'lidi_receive_decode_queue_len',
     'lidi_receive_dispatch_queue_len',
 ]
+
+
+@when('lidi-receive {thread_name} thread is paused until memory grows by {mb:d} MB or {seconds:d} seconds')
+def step_pause_until_memory_grows(context, thread_name, mb, seconds):
+    """Pause a lidi-receive thread and exit as soon as RSS grows by mb MB.
+
+    Exits early the moment memory exceeds the threshold; seconds is the maximum
+    wait before giving up (the following assertion will then fail).
+    """
+    from features.steps.memory_analyzer import MemoryAnalyzer
+
+    pid = context.proc_lidi_receive.pid
+    tid = find_thread_tid(pid, thread_name)
+    assert tid is not None, (
+        f"Thread '{thread_name}' not found in lidi-receive (PID {pid}). "
+        f"Known names: reblock_<port>, dispatch, client_0, client_1, …"
+    )
+
+    analyzer = MemoryAnalyzer(pid, tid)
+    context.thread_pause_analyzer = analyzer
+    context.thread_pause_max_gauges = {}
+
+    analyzer.sample_now(label="[baseline before pause]")
+    start_mb = analyzer.samples[0].rss_mb
+    context.thread_pause_memory_start_mb = start_mb
+    context.thread_pause_memory_peak_mb = start_mb
+
+    stopped = ptrace_stop_thread(pid, tid, timeout=2.0)
+    if not stopped:
+        raise RuntimeError(
+            f"ptrace failed to stop thread {tid} — "
+            f"check CAP_SYS_PTRACE / /proc/sys/kernel/yama/ptrace_scope"
+        )
+
+    try:
+        deadline = time.time() + seconds
+        while time.time() < deadline:
+            sample = analyzer.sample_now()
+            peak = max(context.thread_pause_memory_peak_mb, sample.rss_mb)
+            context.thread_pause_memory_peak_mb = peak
+            if peak - start_mb >= mb:
+                log.info(f"RSS grew by {peak - start_mb:.1f} MB ≥ {mb} MB — releasing thread early")
+                break
+            time.sleep(0.1)
+    finally:
+        ptrace_resume_thread(tid)
+
+    analyzer.sample_now(label="[final after pause]")
+    log.info(analyzer.generate_report())
+    context.thread_pause_memory_samples = [s.rss_mb for s in analyzer.samples]
 
 
 @when('lidi-receive {thread_name} thread is paused for {seconds:d} seconds')

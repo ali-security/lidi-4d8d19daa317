@@ -288,12 +288,16 @@ def start_throttled_diode_no_file_receive(context, read_rate: str):
 def start_udp_tunnel_diode(context):
     """Start lidi diode configured for UDP tunnel tests (no lidi-file components).
 
-    flush=true is required because lidi-udp-send keeps its TCP connection open
-    indefinitely, so lidi-receive never gets an End block to trigger a BufWriter
-    flush. Without it the data stalls in the BufWriter and never reaches
-    lidi-udp-receive.
+    flush=true is required on both sides because lidi-udp-send keeps its TCP
+    connection open indefinitely:
+    - tcp_send_flush: lidi-send flushes each partial block immediately instead
+      of waiting for block_size bytes; without this, small datagrams accumulate
+      and never get transmitted.
+    - tcp_flush: lidi-receive flushes each write to lidi-udp-receive so data
+      is not stalled in the BufWriter.
     """
     context.tcp_flush = True
+    context.tcp_send_flush = True
 
     # Start lidi-receive first (without lidi-file-receive)
     start_lidi_receive(context)

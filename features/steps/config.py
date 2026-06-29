@@ -48,10 +48,14 @@ def build_lidi_config(context, udp_port, log_config, side='both'):
 
     # TLS send endpoint configuration
     send_tls_enabled = getattr(context, 'tls_send_enabled', False)
+    send_flush = getattr(context, 'tcp_send_flush', False)
     send_proto = 'tls' if send_tls_enabled else 'tcp'
     send_opts = getattr(context, 'tls_send_endpoint_opts', '')
     if send_opts:
-        send_endpoint = f'{send_proto}[{send_opts}]:127.0.0.1:{context.tcp_send_port}'
+        opts = f'{send_opts},flush=true' if send_flush else send_opts
+        send_endpoint = f'{send_proto}[{opts}]:127.0.0.1:{context.tcp_send_port}'
+    elif send_flush:
+        send_endpoint = f'{send_proto}[flush=true]:127.0.0.1:{context.tcp_send_port}'
     else:
         send_endpoint = f'{send_proto}:127.0.0.1:{context.tcp_send_port}'
 

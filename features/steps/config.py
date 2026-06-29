@@ -200,6 +200,7 @@ def build_lidi_receive_command(context):
         getattr(context, 'network_blackout_duration', None)
     )
     receiver_bind_udp_port = "6000" if has_network_simulator else "5000"
+    context._lidi_receive_udp_port = int(receiver_bind_udp_port)
 
     lidi_config = write_lidi_config(context, "lidi_receive.toml", receiver_bind_udp_port, context.log_config_lidi_receive, side='receive')
 

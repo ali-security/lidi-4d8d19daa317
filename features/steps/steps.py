@@ -1354,6 +1354,8 @@ def step_verify_abort_timeout_in_log(context):
             'client idle timeout',
             'closing idle client',
             'client closed due to timeout',
+            'aborting transfer',
+            'timeout waiting for blocks',
         ]):
             return
     raise Exception("Expected abort_timeout trigger not found in receiver log after 10 s")

@@ -1,15 +1,35 @@
 # functions to be called before or after tests must be put here
 
-from tempfile import TemporaryDirectory
 import signal
 import subprocess
 import time
 import os
 from pathlib import Path
+import psutil
 
 from features.steps.lidi import stop_throttled_diode
 from features.steps.utils import kill_process_safe
 from features.steps.tls_pki import generate_pki
+
+_LIDI_PROCESS_NAMES = {
+    'lidi-send', 'lidi-receive', 'lidi-file-send', 'lidi-file-receive',
+    'lidi-dir-send', 'lidi-network-simulator',
+}
+
+def wait_for_processes_dead(max_wait=1.0):
+    """Return as soon as no lidi processes remain, up to max_wait seconds."""
+    deadline = time.monotonic() + max_wait
+    while time.monotonic() < deadline:
+        try:
+            if not any(p.info['name'] in _LIDI_PROCESS_NAMES
+                       for p in psutil.process_iter(['name'])):
+                return True
+        except psutil.Error:
+            pass
+        time.sleep(0.02)
+    os.system("pkill -9 -f lidi 2>/dev/null")
+    return False
+
 
 # function called before any feature or scenario
 def before_all(context):
@@ -173,8 +193,8 @@ def after_scenario(context, _scenario):
     kill_process_safe('proc_network', 'lidi-network-simulator', context)
     kill_process_safe('proc_lidi_receive_file', 'lidi-file-receive', context)
 
-    # make sure everything is killed, even throttled_fs (fuse) which uses temp directories
-    time.sleep(1)
+    # Wait until all lidi processes are dead before starting the next scenario
+    wait_for_processes_dead()
 
     # Clear files metadata
     context.files.clear()

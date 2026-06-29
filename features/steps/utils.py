@@ -1,3 +1,4 @@
+import subprocess
 import time
 import psutil
 
@@ -11,23 +12,12 @@ def kill_process_safe(process_attr_name, process_name, context):
         process = getattr(context, process_attr_name)
         if process:
             try:
-                # If the process has already finished, poll() returns the exit code
-                poll = process.poll()
-                if poll is not None:
-                    # Process already finished
-                    pass
-                else:
-                    # Process still running, let's try to kill it
+                if process.poll() is None:
                     process.kill()
-                    # Wait a bit for the process to terminate cleanly
-                    time.sleep(0.1)
-                    # Check if the process is really terminated
-                    poll = process.poll()
-                    if poll is not None:
-                        # Process terminated
-                        pass
-                    else:
-                        print(f"{process_name} did not terminate cleanly")
+                    try:
+                        process.wait(timeout=2)
+                    except subprocess.TimeoutExpired:
+                        print(f"{process_name} did not terminate after SIGKILL")
             except Exception as e:
                 print(f"Error closing {process_name}: {e}")
 

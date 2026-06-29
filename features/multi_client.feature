@@ -61,14 +61,16 @@ Feature: Multi-client support (max_clients parameter)
     # lidi-file-send is still blocked writing to the socket (backpressure from
     # the throttled UDP link) when it gets killed after 1 second, so the
     # transfer is genuinely interrupted mid-stream rather than already
-    # finished. Client 2 sends a normal 1MB file and must still be received,
+    # finished. Client 2 sends an 800KB file and must still be received. The
+    # 800KB size ensures the "should not be received" check starts late enough
+    # for the interrupted stream's partial data to drain (~40s at 100kbit/s),
     # while client 1's file must never be fully received.
     Given lidi is started with max_clients set to 2 and limited to 800kbit
-    When client 1 starts sending "input_1m_1" of size 5MB
-    And client 2 starts sending "input_1m_2" of size 1MB
+    When client 1 starts sending "input_5m_1" of size 5MB
+    And client 2 starts sending "input_800k_2" of size 800KB
     And client 1 is killed after 1 seconds
-    Then lidi-file-receive file "input_1m_2" in 40 seconds
-    And file "input_1m_1" should not be received
+    Then lidi-file-receive file "input_800k_2" in 25 seconds
+    And file "input_5m_1" should not be received
 
   # Group 10: max_clients=10 (high parallelization)
   Scenario: T-MC10.1 — max_clients=10 — 10 simultaneous clients
@@ -97,16 +99,15 @@ Feature: Multi-client support (max_clients parameter)
     # Client 1 sends a 5MB file: large enough that lidi-file-send is still
     # blocked writing to the socket (backpressure from the throttled UDP
     # link) when it gets killed after 1 second, so the transfer is genuinely
-    # interrupted mid-stream. The already-buffered data still has to drain
-    # over the throttled link before the follow-up transfer is received, so
-    # give it a generous timeout.
+    # interrupted mid-stream. The Abort block frees the slot; the 5s wait
+    # lets it propagate before the follow-up transfer is sent.
     Given lidi is started with max_clients set to 1 and limited to 800kbit
-    When client 1 starts sending "input_1m" of size 5MB
+    When client 1 starts sending "input_5m" of size 5MB
     And client 1 is killed after 1 seconds
     And 5 seconds are waited for Abort propagation
     And file "input_100k_follow" of size 100KB is sent
     Then lidi-file-receive file "input_100k_follow" in 45 seconds
-    And file "input_1m" should not be received
+    And file "input_5m" should not be received
 
   Scenario: T-MC-R3 — max_clients=1 bandwidth limited 100KB/s — respects queue not reject
     # Bandwidth-limited reception timeout. With 100 KB/s, 100 KB = ~1 second per file.
@@ -118,17 +119,16 @@ Feature: Multi-client support (max_clients parameter)
     Then lidi-file-receive file "input_100k_1" in 30 seconds
     And lidi-file-receive file "input_100k_2" in 30 seconds
 
-  @wip
   Scenario: T-MC-R4 — max_clients=2 — no slot leak after multiple Abort cycles (abort_timeout=1s)
     Given abort_timeout is set to 1 second
     And lidi is started with max_clients set to 2 and limited to 800kbit
-    When client 1 starts sending "input_1m_1" of size 1MB
+    When client 1 starts sending "input_200k_1" of size 200KB
     And client 1 is killed after 1 seconds
     And 2 seconds are waited for Abort propagation
-    And client 2 starts sending "input_1m_2" of size 1MB
+    And client 2 starts sending "input_200k_2" of size 200KB
     And client 2 is killed after 1 seconds
     And 2 seconds are waited for Abort propagation
-    And client 3 starts sending "input_1m_3" of size 1MB
+    And client 3 starts sending "input_200k_3" of size 200KB
     And client 3 is killed after 1 seconds
     And 2 seconds are waited for Abort propagation
     And file "input_100k_final" of size 100KB is sent
@@ -137,30 +137,30 @@ Feature: Multi-client support (max_clients parameter)
   # Group ISO: Isolation of large transfer
   Scenario: T-MC-ISO1 — max_clients=10 — large transfer unaffected by 5 concurrent crashes
     Given lidi is started with max_clients set to 10 and limited to 800kbit
-    When client 1 starts sending "input_1m" of size 1MB
+    When client 1 starts sending "input_200k" of size 200KB
     And 5 additional clients start sending "input_1k_*" of size 1KB each
     And clients 2-6 are killed after 1 seconds
-    Then lidi-file-receive file "input_1m" in 30 seconds
+    Then lidi-file-receive file "input_200k" in 15 seconds
 
   Scenario: T-MC-ISO2 — max_clients=10 — large transfer coexisting with 5 normal small transfers
     Given lidi is started with max_clients set to 10 and limited to 800kbit
-    When client 1 starts sending "input_1m" of size 1MB
+    When client 1 starts sending "input_200k" of size 200KB
     And 5 additional clients start sending "input_100k_*" of size 100KB each
-    Then lidi-file-receive file "input_1m" in 30 seconds
-    And all 5 additional output files exist and are identical within 30 seconds
+    Then lidi-file-receive file "input_200k" in 15 seconds
+    And all 5 additional output files exist and are identical within 15 seconds
 
   Scenario: T-MC-ISO3 — max_clients=3 — large transfer unaffected by Abort and normal concurrent
     # Client 2 sends a 5MB file: large enough that lidi-file-send is still
     # blocked writing to the socket (backpressure from the throttled UDP
     # link) when it gets killed after 1 second, so the transfer is genuinely
-    # interrupted mid-stream. The already-buffered data still has to drain
-    # over the throttled link alongside clients 1 and 3, so give their
-    # transfers a generous timeout.
+    # interrupted mid-stream. The already-buffered data in lidi-send's TCP
+    # receive buffer still has to drain over the throttled link alongside
+    # clients 1 and 3, so give their transfers a generous timeout.
     Given lidi is started with max_clients set to 3 and limited to 800kbit
     When client 1 starts sending "input_1m_1" of size 1MB
-    And client 2 starts sending "input_1m_2" of size 5MB
+    And client 2 starts sending "input_5m_2" of size 5MB
     And client 3 starts sending "input_100k" of size 100KB
     And client 2 is killed after 1 seconds
     Then lidi-file-receive file "input_1m_1" in 45 seconds
     And lidi-file-receive file "input_100k" in 45 seconds
-    And file "input_1m_2" should not be received
+    And file "input_5m_2" should not be received

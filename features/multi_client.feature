@@ -61,15 +61,14 @@ Feature: Multi-client support (max_clients parameter)
     # lidi-file-send is still blocked writing to the socket (backpressure from
     # the throttled UDP link) when it gets killed after 1 second, so the
     # transfer is genuinely interrupted mid-stream rather than already
-    # finished. Client 2 sends an 800KB file and must still be received. The
-    # 800KB size ensures the "should not be received" check starts late enough
-    # for the interrupted stream's partial data to drain (~40s at 100kbit/s),
-    # while client 1's file must never be fully received.
-    Given lidi is started with max_clients set to 2 and limited to 800kbit
+    # finished. At 4mbit with 2 clients (~250KB/s each), the ~2MB TCP buffer
+    # drains in ~8s; the 30s grace period of "should not be received" covers
+    # this comfortably with a small 200KB file for client 2.
+    Given lidi is started with max_clients set to 2 and limited to 4mbit
     When client 1 starts sending "input_5m_1" of size 5MB
-    And client 2 starts sending "input_800k_2" of size 800KB
+    And client 2 starts sending "input_200k_2" of size 200KB
     And client 1 is killed after 1 seconds
-    Then lidi-file-receive file "input_800k_2" in 25 seconds
+    Then lidi-file-receive file "input_200k_2" in 10 seconds
     And file "input_5m_1" should not be received
 
   # Group 10: max_clients=10 (high parallelization)
@@ -99,14 +98,14 @@ Feature: Multi-client support (max_clients parameter)
     # Client 1 sends a 5MB file: large enough that lidi-file-send is still
     # blocked writing to the socket (backpressure from the throttled UDP
     # link) when it gets killed after 1 second, so the transfer is genuinely
-    # interrupted mid-stream. The Abort block frees the slot; the 5s wait
-    # lets it propagate before the follow-up transfer is sent.
-    Given lidi is started with max_clients set to 1 and limited to 800kbit
+    # interrupted mid-stream. At 4mbit (500KB/s), the ~2MB TCP buffer drains
+    # in ~4s; the 5s wait covers propagation before the follow-up is sent.
+    Given lidi is started with max_clients set to 1 and limited to 4mbit
     When client 1 starts sending "input_5m" of size 5MB
     And client 1 is killed after 1 seconds
     And 5 seconds are waited for Abort propagation
     And file "input_100k_follow" of size 100KB is sent
-    Then lidi-file-receive file "input_100k_follow" in 45 seconds
+    Then lidi-file-receive file "input_100k_follow" in 15 seconds
     And file "input_5m" should not be received
 
   Scenario: T-MC-R3 — max_clients=1 bandwidth limited 100KB/s — respects queue not reject
@@ -153,14 +152,15 @@ Feature: Multi-client support (max_clients parameter)
     # Client 2 sends a 5MB file: large enough that lidi-file-send is still
     # blocked writing to the socket (backpressure from the throttled UDP
     # link) when it gets killed after 1 second, so the transfer is genuinely
-    # interrupted mid-stream. The already-buffered data in lidi-send's TCP
-    # receive buffer still has to drain over the throttled link alongside
-    # clients 1 and 3, so give their transfers a generous timeout.
-    Given lidi is started with max_clients set to 3 and limited to 800kbit
-    When client 1 starts sending "input_1m_1" of size 1MB
+    # interrupted mid-stream. At 4mbit shared across 3 clients (~167KB/s
+    # each), the ~2MB TCP buffer drains in ~12s; the 30s grace period of
+    # "should not be received" (starting at ~t=1s after fast client 1 + 3
+    # transfers) covers this comfortably.
+    Given lidi is started with max_clients set to 3 and limited to 4mbit
+    When client 1 starts sending "input_200k_1" of size 200KB
     And client 2 starts sending "input_5m_2" of size 5MB
     And client 3 starts sending "input_100k" of size 100KB
     And client 2 is killed after 1 seconds
-    Then lidi-file-receive file "input_1m_1" in 45 seconds
-    And lidi-file-receive file "input_100k" in 45 seconds
+    Then lidi-file-receive file "input_200k_1" in 10 seconds
+    And lidi-file-receive file "input_100k" in 10 seconds
     And file "input_5m_2" should not be received

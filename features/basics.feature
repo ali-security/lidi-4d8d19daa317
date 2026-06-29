@@ -24,7 +24,8 @@ Feature: Basic lidi functionality
     Then lidi-file-receive file C in 5 seconds
 
   Scenario: Send multiple 100M files without drop
-    Given lidi is started with max throughput of 100mbit
+    # 3×100MB at 400mbit (50MB/s): ~6s transfer, well within 5s per-file grace.
+    Given lidi is started with max throughput of 400mbit
     When lidi-file-send file A of size 100MB
     When lidi-file-send file B of size 100MB
     When lidi-file-send file C of size 100MB

@@ -36,15 +36,22 @@ from features.steps.file import create_file
 from features.steps.tc_shaper import TcUdpShaper
 from features.steps.utils import stop_process, nice, PROCESS_READY_DELAY, PROCESS_READY_DELAY_EXTENDED
         
-def start_lidi_receive(context):
+def start_lidi_receive(context, capture_output=False):
     """Start the lidi receive process."""
     lidi_receive_command = build_lidi_receive_command(context)
 
-    context.proc_lidi_receive = subprocess.Popen(
-        lidi_receive_command,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE
-    )
+    if capture_output:
+        context.proc_lidi_receive = subprocess.Popen(
+            lidi_receive_command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+    else:
+        context.proc_lidi_receive = subprocess.Popen(
+            lidi_receive_command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
 
     # Wait enough time for lidi-receive to be ready
     # Valgrind significantly slows startup, so add extra delay
@@ -55,10 +62,17 @@ def start_lidi_receive(context):
     poll = context.proc_lidi_receive.poll()
     if poll is not None:
         stdout, stderr = context.proc_lidi_receive.communicate()
-        print(f"lidi-receive failed with return code {poll}")
-        print(f"Stdout: {stdout}")
-        print(f"Stderr: {stderr}")
-        raise Exception("Can't start lidi receive")
+        if capture_output:
+            stderr_str = stderr.decode() if stderr else ""
+            print(f"lidi-receive failed with return code {poll}")
+            print(f"Stdout: {stdout}")
+            print(f"Stderr: {stderr_str}")
+            raise Exception(f"Can't start lidi receive: {stderr_str if stderr_str else 'Unknown error'}")
+        else:
+            print(f"lidi-receive failed with return code {poll}")
+            print(f"Stdout: {stdout}")
+            print(f"Stderr: {stderr}")
+            raise Exception("Can't start lidi receive")
 
     nice('lidi-receive')
 
@@ -93,12 +107,19 @@ def stop_lidi_file_receive(context):
     """Stop the lidi file receive process."""
     stop_process(context, 'proc_lidi_receive_file')
 
-def start_lidi_send(context):
+def start_lidi_send(context, capture_output=False):
     """Start the lidi send process."""
     lidi_send_command = build_lidi_send_command(context)
 
     # Start lidi-send
-    context.proc_lidi_send = subprocess.Popen(lidi_send_command)
+    if capture_output:
+        context.proc_lidi_send = subprocess.Popen(
+            lidi_send_command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+    else:
+        context.proc_lidi_send = subprocess.Popen(lidi_send_command)
 
     # Wait enough time for lidi-send to be ready
     # Valgrind significantly slows startup, so add extra delay
@@ -108,11 +129,19 @@ def start_lidi_send(context):
     # Check it is running
     poll = context.proc_lidi_send.poll()
     if poll is not None:
-        stdout, stderr = context.proc_lidi_send.communicate()
-        print(f"lidi-send failed with return code {poll}")
-        print(f"Stdout: {stdout}")
-        print(f"Stderr: {stderr}")
-        raise Exception("Can't start lidi send")
+        if capture_output:
+            stdout, stderr = context.proc_lidi_send.communicate()
+            stderr_str = stderr.decode() if stderr else ""
+            print(f"lidi-send failed with return code {poll}")
+            print(f"Stdout: {stdout}")
+            print(f"Stderr: {stderr_str}")
+            raise Exception(f"Can't start lidi send: {stderr_str if stderr_str else 'Unknown error'}")
+        else:
+            stdout, stderr = context.proc_lidi_send.communicate()
+            print(f"lidi-send failed with return code {poll}")
+            print(f"Stdout: {stdout}")
+            print(f"Stderr: {stderr}")
+            raise Exception("Can't start lidi send")
     nice('lidi-send')
 
 def stop_lidi_send(context):

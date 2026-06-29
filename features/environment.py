@@ -68,6 +68,9 @@ def before_scenario(context, _feature):
     # files metadata
     context.files = {}
 
+    # concurrent processes for multi-client tests
+    context.concurrent_processes = []
+
     # process instances
     context.proc_lidi_receive = None
     context.proc_lidi_send = None
@@ -115,7 +118,23 @@ def before_scenario(context, _feature):
 # function called after every test : cleanup (delete temp directories & kill processes)
 def after_scenario(context, _scenario):
     stop_throttled_diode(context)
-    
+
+    # Kill concurrent processes from multi-client tests
+    if hasattr(context, 'concurrent_processes'):
+        for proc_info in context.concurrent_processes:
+            proc = proc_info.get('process')
+            if proc and proc.poll() is None:
+                try:
+                    proc.terminate()
+                    proc.wait(timeout=5)
+                except (subprocess.TimeoutExpired, ProcessLookupError):
+                    try:
+                        proc.kill()
+                        proc.wait(timeout=2)
+                    except (subprocess.TimeoutExpired, ProcessLookupError):
+                        pass
+        context.concurrent_processes.clear()
+
     # first kill processes
     kill_process_safe('proc_lidi_receive', 'lidi-receive', context)
     kill_process_safe('proc_lidi_send', 'lidi-send', context)

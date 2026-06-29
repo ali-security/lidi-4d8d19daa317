@@ -61,8 +61,11 @@ def build_lidi_config(context, udp_port, log_config, side='both'):
     if abort_timeout != 0:
         receive_lines.append(f"abort_timeout = {abort_timeout}")
 
+    # Only include Prometheus if not disabled
+    if not getattr(context, 'no_prometheus', False):
+        receive_lines.append('prometheus_listen = "127.0.0.1:9002"')
+
     receive_lines.extend([
-        'prometheus_listen = "127.0.0.1:9002"',
         f"{log_config}",
         f'to = [ "tcp[hash={str(hash_val).lower()},flush={str(flush).lower()}]:127.0.0.1:{context.tcp_receive_port}" ]'
     ])
@@ -82,12 +85,17 @@ def build_lidi_config(context, udp_port, log_config, side='both'):
         'to = "127.0.0.1"',
         'to_bind = "0.0.0.0:0"',
         f'mode = "{udp_send_mode}"',
-        'prometheus_listen = "127.0.0.1:9001"',
+    ]
+    # Only include Prometheus if not disabled
+    if not getattr(context, 'no_prometheus', False):
+        config_lines.append('prometheus_listen = "127.0.0.1:9001"')
+
+    config_lines.extend([
         f"{log_config}",
         f'from = [ "tcp[hash={str(hash_val).lower()},flush={str(flush).lower()}]:127.0.0.1:{context.tcp_send_port}" ]',
         "",
         "[receive]",
-    ]
+    ])
     config_lines.extend(receive_lines)
 
     return "\n".join(config_lines)

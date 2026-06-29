@@ -56,9 +56,8 @@ Feature: Memory stability of lidi-receive under congestion
     And client_queue_size is configured to 1
     And lidi-receive is restarted
     When lidi-file-send starts sending file tsr4.bin of size 50MB
-    And wait 2 seconds
     And lidi-file-receive is paused
-    And wait 3 seconds
+    And wait until receiver counter lidi_receive_client_queue_full reaches 1 or fail after 3 seconds
     Then the receiver Prometheus counter lidi_receive_client_queue_full is greater than or equal to 1
     And lidi-file-receive is resumed
 
@@ -107,7 +106,6 @@ Feature: Memory stability of lidi-receive under congestion
     # Fix: set reblock_queue_size > 0 (see T-SR8b).
     Given lidi is started with max throughput of 400mbit
     When lidi-file-send starts sending file tsr8.bin of size 100MB
-    And wait 2 seconds
     And lidi-receive reblock_5000 thread is paused until memory grows by 10 MB or 3 seconds
     Then receiver memory grew by more than 10 MB during thread pause
 
@@ -125,7 +123,6 @@ Feature: Memory stability of lidi-receive under congestion
     And clients_queue_size is configured to 128
     And lidi-receive is restarted
     When lidi-file-send starts sending file tsr8b.bin of size 100MB
-    And wait 2 seconds
     And lidi-receive reblock_5000 thread is paused for 3 seconds
     Then receiver memory did not grow by more than 10 MB during thread pause
 
@@ -137,7 +134,6 @@ Scenario: T-SR10 - to_dispatch grows unbounded when dispatch thread is slow
     # Fix: set dispatch_queue_size > 0 (see T-SR10b).
     Given lidi is started with max throughput of 400mbit
     When lidi-file-send starts sending file tsr10.bin of size 100MB
-    And wait 2 seconds
     And lidi-receive dispatch thread is paused until memory grows by 10 MB or 3 seconds
     Then receiver memory grew by more than 10 MB during thread pause
 
@@ -152,7 +148,6 @@ Scenario: T-SR10 - to_dispatch grows unbounded when dispatch thread is slow
     And clients_queue_size is configured to 128
     And lidi-receive is restarted
     When lidi-file-send starts sending file tsr10b.bin of size 100MB
-    And wait 2 seconds
     And lidi-receive dispatch thread is paused for 3 seconds
     Then receiver memory did not grow by more than 10 MB during thread pause
 
@@ -164,7 +159,6 @@ Scenario: T-SR10 - to_dispatch grows unbounded when dispatch thread is slow
     # Fix: set client_queue_size > 0 (see T-SR11b).
     Given lidi is started with max throughput of 400mbit
     When lidi-file-send starts sending file tsr11.bin of size 100MB
-    And wait 2 seconds
     And lidi-receive reorder_0 thread is paused until memory grows by 10 MB or 3 seconds
     Then receiver memory grew by more than 10 MB during thread pause
 
@@ -180,7 +174,6 @@ Scenario: T-SR10 - to_dispatch grows unbounded when dispatch thread is slow
     And client_queue_size is configured to 4
     And lidi-receive is restarted
     When lidi-file-send starts sending file tsr11b.bin of size 100MB
-    And wait 2 seconds
     And lidi-receive reorder_0 thread is paused for 3 seconds
     Then receiver memory did not grow by more than 10 MB during thread pause
 
@@ -199,7 +192,7 @@ Scenario: T-SR10 - to_dispatch grows unbounded when dispatch thread is slow
     And lidi is started with max throughput of 400mbit
     When lidi-file-send starts sending file tsr12.bin of size 100MB
     And lidi-file-receive is paused
-    And wait 3 seconds
+    And wait until receiver memory grows by 10 MB or fail after 3 seconds
     Then receiver memory grew by more than 10 MB during pause
     And lidi-file-receive is resumed
 

@@ -9,7 +9,7 @@ import re
 import logging
 from features.steps.slow_client import (
     SlowTcpClient, get_process_memory_mb, monitor_process_memory,
-    find_thread_tid, starve_thread_via_cpu_pinning,
+    find_thread_tid, wait_for_thread, starve_thread_via_cpu_pinning,
     ptrace_stop_thread, ptrace_resume_thread,
 )
 
@@ -2296,6 +2296,39 @@ def step_receive_file_a_timeout(context, timeout):
     """Verify that file A is received within the timeout."""
     test_file(context, 'A', timeout)
 
+@when('wait until receiver counter {metric} reaches {min_value:d} or fail after {seconds:d} seconds')
+def step_wait_until_receiver_counter_reaches(context, metric, min_value, seconds):
+    """Poll a receiver Prometheus counter until it reaches min_value, or fail on timeout.
+
+    Exits as soon as the counter hits the threshold; raises AssertionError if
+    seconds elapse without it being reached.
+    """
+    import urllib.request
+    url = 'http://127.0.0.1:9002/metrics'
+    deadline = time.time() + seconds
+    last_value = None
+
+    while time.time() < deadline:
+        try:
+            response = urllib.request.urlopen(url, timeout=1)
+            for line in response.read().decode('utf-8').split('\n'):
+                if line.startswith(metric) and not line.startswith('#'):
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        last_value = int(float(parts[-1]))
+                        if last_value >= min_value:
+                            return
+                        break
+        except Exception:
+            pass
+        time.sleep(0.1)
+
+    raise AssertionError(
+        f"Counter {metric} did not reach {min_value} within {seconds}s "
+        f"(last value: {last_value})"
+    )
+
+
 @then('the receiver Prometheus counter {metric} is greater than or equal to {value:d}')
 def step_verify_receiver_prometheus_counter_gte(context, metric, value):
     """Verify that a receiver Prometheus counter has a value >= the expected amount."""
@@ -2653,6 +2686,32 @@ def step_resume_lidi_file_receive(context):
             pass
 
 
+@when('wait until receiver memory grows by {mb:d} MB or fail after {seconds:d} seconds')
+def step_wait_until_receiver_memory_grows(context, mb, seconds):
+    """Poll lidi-receive RSS until growth >= mb MB, or fail on timeout.
+
+    Relies on memory_at_pause_start_mb set by 'lidi-file-receive is paused'.
+    Exits as soon as the threshold is crossed; raises AssertionError otherwise.
+    """
+    pid = context.proc_lidi_receive.pid
+    start = getattr(context, 'memory_at_pause_start_mb', None) or get_process_memory_mb(pid)
+    deadline = time.time() + seconds
+    current = start
+
+    while time.time() < deadline:
+        mem = get_process_memory_mb(pid)
+        if mem is not None:
+            current = mem
+            if mem - start >= mb:
+                return
+        time.sleep(0.1)
+
+    raise AssertionError(
+        f"lidi-receive RSS grew by only {current - start:.1f} MB in {seconds}s "
+        f"(expected >= {mb} MB)"
+    )
+
+
 @then('receiver memory grew by more than {mb:d} MB during pause')
 def step_assert_memory_growth_during_client_pause(context, mb):
     """Assert that lidi-receive RSS grew by MORE than mb MB while lidi-file-receive was paused.
@@ -2789,10 +2848,13 @@ def step_pause_until_memory_grows(context, thread_name, mb, seconds):
     from features.steps.memory_analyzer import MemoryAnalyzer
 
     pid = context.proc_lidi_receive.pid
-    tid = find_thread_tid(pid, thread_name)
+    # reorder_<N> is spawned per-client only once a connection is fully
+    # established, unlike reblock_<port>/dispatch which exist from process
+    # start; poll briefly instead of assuming it's already there.
+    tid = wait_for_thread(pid, thread_name, timeout=2.0)
     assert tid is not None, (
-        f"Thread '{thread_name}' not found in lidi-receive (PID {pid}). "
-        f"Known names: reblock_<port>, dispatch, client_0, client_1, …"
+        f"Thread '{thread_name}' not found in lidi-receive (PID {pid}) after waiting 2s. "
+        f"Known names: reblock_<port>, dispatch, reorder_0, reorder_1, …"
     )
 
     analyzer = MemoryAnalyzer(pid, tid)
@@ -2842,10 +2904,13 @@ def step_pause_named_thread(context, thread_name, seconds):
     from features.steps.memory_analyzer import MemoryAnalyzer, get_prometheus_gauge
 
     pid = context.proc_lidi_receive.pid
-    tid = find_thread_tid(pid, thread_name)
+    # reorder_<N> is spawned per-client only once a connection is fully
+    # established, unlike reblock_<port>/dispatch which exist from process
+    # start; poll briefly instead of assuming it's already there.
+    tid = wait_for_thread(pid, thread_name, timeout=2.0)
     assert tid is not None, (
-        f"Thread '{thread_name}' not found in lidi-receive (PID {pid}). "
-        f"Known names: reblock_<port>, dispatch, client_0, client_1, …"
+        f"Thread '{thread_name}' not found in lidi-receive (PID {pid}) after waiting 2s. "
+        f"Known names: reblock_<port>, dispatch, reorder_0, reorder_1, …"
     )
 
     # Initialize analyzer

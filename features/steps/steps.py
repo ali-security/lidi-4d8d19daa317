@@ -120,7 +120,7 @@ class UdpServer:
             except OSError:
                 break
 
-from features.steps.lidi import create_file, send_file, send_multiple_files, start_diode, start_lidi_file_receive, start_lidi_receive, start_lidi_send, start_lidi_send_dir, start_lidi_udp_send, start_lidi_udp_receive, start_throttled_diode, start_udp_tunnel_diode, stop_lidi_file_receive, stop_lidi_graceful, stop_lidi_receive, stop_lidi_send, stop_lidi_udp_send, stop_lidi_udp_receive
+from features.steps.lidi import create_file, send_file, send_multiple_files, start_diode, start_lidi_file_receive, start_lidi_receive, start_lidi_send, start_lidi_send_dir, start_lidi_udp_send, start_lidi_udp_receive, start_throttled_diode, start_udp_tunnel_diode, stop_lidi_file_receive, stop_lidi_graceful, stop_lidi_receive, stop_lidi_send, stop_lidi_udp_send, stop_lidi_udp_receive, wait_for_port_bound
 from features.steps.file import create_and_copy_file, create_and_copy_multiple_files, create_and_move_file, parse_human_size, test_file, test_no_file
 from features.steps.config import build_lidi_send_file_command
 
@@ -1690,19 +1690,16 @@ root:
         text=True
     )
 
-    # Wait a bit for the process to start/fail
-    # Configuration errors should fail quickly, but give it a bit more time to be safe
-    for i in range(10):
-        time.sleep(0.5)
-        poll = context.proc_lidi_send_test.poll()
-        if poll is not None:
-            break
+    # Wait for the process to bind its TCP port (success) or exit (failure).
+    # Extract the first TCP port from the config's "from" endpoints.
+    tcp_port_match = re.search(r'tcp[^:]*:(?:[^:]+):(\d+)', config_content)
+    tcp_port = int(tcp_port_match.group(1)) if tcp_port_match else 4000
+    wait_for_port_bound(tcp_port, tcp=True, proc=context.proc_lidi_send_test, timeout=5.0)
 
-    # Check if process is still running (success) or has crashed (failure)
+    poll = context.proc_lidi_send_test.poll()
     context.lidi_send_test_returncode = poll
     context.lidi_send_test_running = (poll is None)
 
-    # Capture any immediate output
     if poll is not None:
         _, stderr = context.proc_lidi_send_test.communicate()
         context.lidi_send_test_stderr = stderr
@@ -1751,13 +1748,11 @@ root:
         text=True
     )
 
-    # Wait for process to start/fail - give it up to 5 seconds
-    for i in range(10):
-        time.sleep(0.5)
-        poll = context.proc_lidi_send_test.poll()
-        if poll is not None:
-            break
+    tcp_port_match = re.search(r'tcp[^:]*:(?:[^:]+):(\d+)', config_content)
+    tcp_port = int(tcp_port_match.group(1)) if tcp_port_match else 4000
+    wait_for_port_bound(tcp_port, tcp=True, proc=context.proc_lidi_send_test, timeout=5.0)
 
+    poll = context.proc_lidi_send_test.poll()
     context.lidi_send_test_returncode = poll
     context.lidi_send_test_running = (poll is None)
 
@@ -1951,12 +1946,11 @@ root:
     )
 
     # Wait up to 5 seconds for process to start/fail
-    for i in range(10):
-        time.sleep(0.5)
-        poll = context.proc_lidi_receive_test.poll()
-        if poll is not None:
-            break
+    udp_port_match = re.search(r'ports\s*=\s*\[(\d+)', config_content)
+    udp_port = int(udp_port_match.group(1)) if udp_port_match else 5000
+    wait_for_port_bound(udp_port, tcp=False, proc=context.proc_lidi_receive_test, timeout=5.0)
 
+    poll = context.proc_lidi_receive_test.poll()
     context.lidi_receive_test_returncode = poll
     context.lidi_receive_test_running = (poll is None)
 

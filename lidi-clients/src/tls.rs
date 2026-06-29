@@ -118,6 +118,25 @@ impl io::Write for TcpStream {
     }
 }
 
+impl Drop for TcpStream {
+    fn drop(&mut self) {
+        // Drain pending server-sent TLS records (e.g. TLS 1.3 NewSessionTicket)
+        // before closing. Without this, Linux sends TCP RST instead of FIN when
+        // the socket is closed with unread data in the receive buffer, which causes
+        // the peer's read() to fail with ECONNRESET and discard buffered data.
+        let _ = self.0.get_ref().set_nonblocking(true);
+        let mut buf = [0u8; 1024];
+        loop {
+            match io::Read::read(&mut self.0, &mut buf) {
+                Ok(0) | Err(_) => break,
+                Ok(_) => continue,
+            }
+        }
+        let _ = self.0.get_ref().set_nonblocking(false);
+        let _ = self.0.shutdown();
+    }
+}
+
 impl os::fd::AsRawFd for TcpStream {
     fn as_raw_fd(&self) -> i32 {
         self.0.get_ref().as_raw_fd()

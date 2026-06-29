@@ -10,7 +10,7 @@ Feature: Incomplete transfer cleanup
     # from the throttled UDP link) when it gets killed after 1 second, so
     # the transfer is genuinely interrupted mid-stream rather than already
     # finished.
-    Given lidi is started with max_clients set to 1 and limited to 800kbit
+    Given lidi is started with max_clients set to 1 and limited to 4mbit
     When client 1 starts sending "input_partial" of size 5MB
     And client 1 is killed after 1 seconds
     Then lidi-file-receive log should report an error for an incomplete transfer

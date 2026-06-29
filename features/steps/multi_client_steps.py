@@ -245,6 +245,30 @@ def step_file_not_present(context, name):
         raise Exception(f"File {name} exists but should not")
 
 
+@then('lidi-file-receive log should report an error for an incomplete transfer')
+def step_log_reports_incomplete_transfer_error(context):
+    """Verify that lidi-file-receive logged an error for the interrupted transfer.
+
+    The error is logged right after the partial file is removed, so allow a
+    short grace period for the log line to be flushed.
+    """
+    log_path = os.path.join(context.log_dir, "lidi_receive_file.log")
+    deadline = time.time() + 45
+    content = ""
+    while time.time() < deadline:
+        if os.path.exists(log_path):
+            with open(log_path) as f:
+                content = f.read()
+            if "ERROR" in content and "invalid file size" in content:
+                return
+        time.sleep(0.2)
+
+    raise Exception(
+        f"lidi-file-receive log does not report an 'invalid file size' error "
+        f"for the incomplete transfer; log content:\n{content}"
+    )
+
+
 @then('all {n:d} output files exist and are identical within {seconds:d} seconds')
 def step_all_files_received(context, n, seconds):
     """Verify that all output files were received."""

@@ -179,6 +179,32 @@ where
     log::debug!("setting mode to {}", header.mode);
     file.set_permissions(fs::Permissions::from_mode(header.mode))?;
 
+    match write_file_content(&mut diode, &mut file, &header, config) {
+        Ok(received) => Ok(received),
+        Err(e) => {
+            // The transfer was incomplete or invalid (e.g. the sending client was
+            // killed mid-transfer): remove the partially written file so it does
+            // not get mistaken for a successfully received one.
+            if let Err(remove_err) = fs::remove_file(&file_path) {
+                log::warn!(
+                    "failed to remove incomplete file {}: {remove_err}",
+                    file_path.display()
+                );
+            }
+            Err(e)
+        }
+    }
+}
+
+fn write_file_content<D>(
+    diode: &mut D,
+    file: &mut fs::File,
+    header: &file::protocol::Header,
+    config: &file::Config<crate::DiodeReceive>,
+) -> Result<usize, file::Error>
+where
+    D: Read + Write,
+{
     let mut buffer = vec![0; config.buffer_size];
     let mut cursor = 0;
     let mut remaining = usize::try_from(header.file_length)?;
@@ -221,7 +247,7 @@ where
 
                 #[cfg(feature = "hash")]
                 if let Some(hasher) = hasher.as_mut() {
-                    let footer = file::protocol::Footer::deserialize_from(&mut diode)?;
+                    let footer = file::protocol::Footer::deserialize_from(&mut *diode)?;
                     let hash = hasher.finalize();
                     log::debug!("expected hash = {}", footer.hash);
                     log::debug!("computed hash = {hash}");

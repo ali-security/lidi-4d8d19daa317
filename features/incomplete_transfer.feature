@@ -4,7 +4,6 @@ Feature: Incomplete transfer cleanup
   # received used to leave a partial, corrupted file on the receiving side.
   # lidi-clients/src/file/receive.rs now removes that partial file and logs
   # the failure as an error instead.
-  @wip
   Scenario: An interrupted transfer must not leave a partial file behind
     # Client 1 sends a 5MB file: on loopback this is large enough that
     # lidi-file-send is still blocked writing to the socket (backpressure

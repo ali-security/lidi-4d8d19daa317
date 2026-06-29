@@ -163,8 +163,6 @@ def step_impl(context):
 @when('lidi-file-receive is restarted')
 def step_impl(context):
     stop_lidi_file_receive(context)
-    # wait some time to prevent address already in use if restarted too quickly
-    time.sleep(5)
     start_lidi_file_receive(context)
 
 @given('lidi-dir-send is started with watch and ignore dot files')

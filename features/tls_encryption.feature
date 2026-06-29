@@ -63,13 +63,13 @@ Feature: TLS encryption between lidi-file-send / lidi-send and lidi-receive / li
     Given TLS send uses an expired certificate
     And lidi is started with TLS on the send side
     When send file test.bin via TLS connection of size 100KB
-    Then the file test.bin is not received within 5 seconds
+    Then the file test.bin is not received within 3 seconds
 
   Scenario: T-TLS10 Certificate from wrong CA rejected at handshake
     Given TLS send uses a certificate from a wrong CA
     And lidi is started with TLS on the send side
     When send file test.bin via TLS connection of size 100KB
-    Then the file test.bin is not received within 5 seconds
+    Then the file test.bin is not received within 3 seconds
 
   Scenario: T-TLS11 Missing certificate file causes startup failure
     Given TLS send uses a non-existent certificate path
@@ -204,4 +204,4 @@ Feature: TLS encryption between lidi-file-send / lidi-send and lidi-receive / li
   Scenario: T-TLS17 mTLS - missing client certificate rejected by server
     Given lidi is started with mutual TLS on the send side
     When send file test.bin via TLS connection of size 100KB
-    Then the file test.bin is not received within 5 seconds
+    Then the file test.bin is not received within 3 seconds

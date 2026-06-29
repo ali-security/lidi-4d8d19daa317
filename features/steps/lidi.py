@@ -350,14 +350,13 @@ def start_lidi_udp_receive(context, forward_port=5020):
         stderr=subprocess.PIPE
     )
 
-    deadline = time.monotonic() + 0.2
-    while time.monotonic() < deadline and context.proc_lidi_udp_receive.poll() is None:
-        time.sleep(0.02)
-
-    poll = context.proc_lidi_udp_receive.poll()
-    if poll is not None:
+    if not wait_for_port_bound(
+        context.tcp_receive_port,
+        tcp=True,
+        proc=context.proc_lidi_udp_receive,
+    ):
         stdout, stderr = context.proc_lidi_udp_receive.communicate()
-        print(f"lidi-udp-receive failed with return code {poll}")
+        print(f"lidi-udp-receive failed to bind tcp_receive_port {context.tcp_receive_port}")
         print(f"Stdout: {stdout}")
         print(f"Stderr: {stderr}")
         raise Exception("Can't start lidi-udp-receive")

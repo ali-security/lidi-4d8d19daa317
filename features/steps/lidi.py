@@ -361,3 +361,87 @@ def stop_lidi_udp_receive(context):
         context.proc_lidi_udp_receive.kill()
         context.proc_lidi_udp_receive.wait()
 
+
+def start_lidi_file_send_tls(context, name, mtls=False):
+    """Send a file using lidi-file-send with TLS to lidi-send.
+
+    Args:
+        context: the test context
+        name: the filename (not including the send directory path)
+        mtls: whether to use mutual TLS (client presents certificate)
+    """
+    pki = context.pki_dir
+    filename = os.path.join(context.send_dir, name)
+    cmd = [
+        str(context.bin_dir / 'lidi-file-send') if hasattr(context.bin_dir, '__truediv__') else f'{context.bin_dir}/lidi-file-send',
+        '--to-tls', f'127.0.0.1:{context.tcp_send_port}',
+        '--tls-ca', str(pki / 'ca.cert.pem'),
+    ]
+    if mtls:
+        cmd += [
+            '--tls-key',         str(pki / 'client.key.pem'),
+            '--tls-certificate', str(pki / 'client.cert.pem'),
+        ]
+    if hasattr(context, 'log_config_lidi_send_file') and context.log_config_lidi_send_file:
+        cmd += ['--log-config', context.log_config_lidi_send_file]
+    cmd.append(filename)
+
+    context.proc_lidi_send_file = subprocess.Popen(
+        cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    )
+    context.proc_lidi_send_file.wait(timeout=10)
+
+
+def start_lidi_file_receive_tls(context):
+    """Start lidi-file-receive with TLS (acts as TLS server for lidi-receive)."""
+    pki = context.pki_dir
+    cmd = [
+        str(context.bin_dir / 'lidi-file-receive') if hasattr(context.bin_dir, '__truediv__') else f'{context.bin_dir}/lidi-file-receive',
+        '--from-tls', f'0.0.0.0:{context.tcp_receive_port}',
+        '--tls-key',         str(pki / 'server.key.pem'),
+        '--tls-certificate', str(pki / 'server.cert.pem'),
+        '--max-files', '1',
+    ]
+    if hasattr(context, 'log_config_lidi_receive_file') and context.log_config_lidi_receive_file:
+        cmd += ['--log-config', context.log_config_lidi_receive_file]
+    cmd.append(context.receive_dir)
+
+    context.proc_lidi_receive_file = subprocess.Popen(
+        cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    )
+
+    # Wait for it to be ready (port open)
+    time.sleep(PROCESS_READY_DELAY)
+
+    # Check it is running
+    poll = context.proc_lidi_receive_file.poll()
+    if poll is not None:
+        stdout, stderr = context.proc_lidi_receive_file.communicate()
+        print(f"lidi-file-receive (TLS) failed with return code {poll}")
+        if stderr:
+            print(f"Stderr: {stderr.decode()}")
+        raise Exception("Can't start lidi-file-receive (TLS)")
+
+
+def start_diode_tls(context, send_tls=False, receive_tls=False):
+    """Start lidi diode with optional TLS on send and/or receive sides."""
+    network_simulator_command = build_network_simulator_command(context)
+
+    # Start network simulator if behavior is configured
+    if network_simulator_command:
+        context.proc_network = subprocess.Popen(network_simulator_command)
+        time.sleep(PROCESS_READY_DELAY)
+
+    # Start lidi-file-receive (TCP or TLS)
+    if receive_tls:
+        start_lidi_file_receive_tls(context)
+    else:
+        start_lidi_file_receive(context)
+    time.sleep(PROCESS_READY_DELAY)
+
+    # Start lidi-receive
+    start_lidi_receive(context)
+
+    # Start lidi-send
+    start_lidi_send(context)
+

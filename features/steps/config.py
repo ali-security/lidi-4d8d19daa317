@@ -45,6 +45,20 @@ def build_lidi_config(context, udp_port, log_config, side='both'):
     dispatch_queue_size = getattr(context, 'dispatch_queue_size', 0)
     clients_queue_size = getattr(context, 'clients_queue_size', 0)
 
+    # TLS send endpoint configuration
+    send_tls_enabled = getattr(context, 'tls_send_enabled', False)
+    send_proto = 'tls' if send_tls_enabled else 'tcp'
+    send_opts = getattr(context, 'tls_send_endpoint_opts', '')
+    if send_opts:
+        send_endpoint = f'{send_proto}[{send_opts}]:127.0.0.1:{context.tcp_send_port}'
+    else:
+        send_endpoint = f'{send_proto}:127.0.0.1:{context.tcp_send_port}'
+
+    # TLS receive endpoint configuration
+    receive_tls_enabled = getattr(context, 'tls_receive_enabled', False)
+    receive_proto = 'tls' if receive_tls_enabled else 'tcp'
+    receive_endpoint = f'{receive_proto}[hash={str(hash_val).lower()},flush={str(flush).lower()}]:127.0.0.1:{context.tcp_receive_port}'
+
     # Build receive section dynamically to handle optional abort_timeout
     udp_receive_mode = getattr(context, 'udp_receive_mode', 'mmsg')
     receive_lines = [
@@ -67,7 +81,7 @@ def build_lidi_config(context, udp_port, log_config, side='both'):
 
     receive_lines.extend([
         f"{log_config}",
-        f'to = [ "tcp[hash={str(hash_val).lower()},flush={str(flush).lower()}]:127.0.0.1:{context.tcp_receive_port}" ]'
+        f'to = [ "{receive_endpoint}" ]'
     ])
 
     # Base configuration similar to tcp.config.toml
@@ -92,11 +106,46 @@ def build_lidi_config(context, udp_port, log_config, side='both'):
 
     config_lines.extend([
         f"{log_config}",
-        f'from = [ "tcp[hash={str(hash_val).lower()},flush={str(flush).lower()}]:127.0.0.1:{context.tcp_send_port}" ]',
-        "",
-        "[receive]",
+        f'from = [ "{send_endpoint}" ]',
     ])
+
+    # Add TLS section for send side if enabled
+    if send_tls_enabled:
+        pki = context.pki_dir
+        tls_send_key  = getattr(context, 'tls_send_key',  str(pki / 'server.key.pem'))
+        tls_send_cert = getattr(context, 'tls_send_cert', str(pki / 'server.cert.pem'))
+        config_lines.extend([
+            "",
+            "[send.tls]",
+            f'key = "{tls_send_key}"',
+            f'certificate = "{tls_send_cert}"',
+        ])
+        if getattr(context, 'tls_send_ca', None):
+            config_lines.append(f'ca = "{context.tls_send_ca}"')
+        if getattr(context, 'tls_send_method', None):
+            config_lines.append(f'tls_method = "{context.tls_send_method}"')
+        if getattr(context, 'tls_send_min', None):
+            config_lines.append(f'tls_min = "{context.tls_send_min}"')
+        if getattr(context, 'tls_send_ciphers', None):
+            config_lines.append(f'ciphers = "{context.tls_send_ciphers}"')
+
+    config_lines.append("")
+    config_lines.append("[receive]")
     config_lines.extend(receive_lines)
+
+    # Add TLS section for receive side if enabled
+    if receive_tls_enabled:
+        pki = context.pki_dir
+        tls_recv_key  = getattr(context, 'tls_receive_key',  str(pki / 'client.key.pem'))
+        tls_recv_cert = getattr(context, 'tls_receive_cert', str(pki / 'client.cert.pem'))
+        tls_recv_ca   = getattr(context, 'tls_receive_ca',   str(pki / 'ca.cert.pem'))
+        config_lines.extend([
+            "",
+            "[receive.tls]",
+            f'key = "{tls_recv_key}"',
+            f'certificate = "{tls_recv_cert}"',
+            f'ca = "{tls_recv_ca}"',
+        ])
 
     return "\n".join(config_lines)
 

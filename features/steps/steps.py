@@ -3066,3 +3066,134 @@ def step_assert_sender_memory_growth(context, mb):
         f"The to_udp queue (lib.rs:204) must be unbounded (udp_queue_size=0). "
         f"If memory did not grow enough, starvation or stress may be insufficient."
     )
+# ─── TLS Encryption Tests ───────────────────────────────────────────────────
+
+from features.steps.lidi import start_lidi_file_send_tls, start_diode_tls
+
+
+@given('lidi is started with TLS on the send side')
+def step_start_lidi_tls_send(context):
+    """Configure lidi-send as TLS server; lidi-receive stays TCP."""
+    context.tls_send_enabled = True
+    start_diode_tls(context, send_tls=True, receive_tls=False)
+
+
+@given('lidi is started with TLS on both sides')
+def step_start_lidi_tls_both(context):
+    """Configure both lidi-send and lidi-receive with TLS."""
+    context.tls_send_enabled = True
+    context.tls_receive_enabled = True
+    start_diode_tls(context, send_tls=True, receive_tls=True)
+
+
+@given('lidi is started with mutual TLS on the send side')
+def step_start_lidi_mtls_send(context):
+    """lidi-send requires client certificate (ca set → FAIL_IF_NO_PEER_CERT)."""
+    context.tls_send_enabled = True
+    context.tls_send_ca = str(context.pki_dir / 'ca.cert.pem')
+    start_diode_tls(context, send_tls=True, receive_tls=False)
+
+
+@given('TLS send method is {method}')
+def step_tls_send_method(context, method):
+    """Set tls_method in [send.tls], e.g. 'mozilla_intermediate_v5'."""
+    context.tls_send_method = method
+
+
+@given('TLS send minimum version is {version}')
+def step_tls_send_min(context, version):
+    """Set tls_min in [send.tls], e.g. 'tls1_3'."""
+    context.tls_send_min = version
+
+
+@given('TLS send cipher suite is {ciphers}')
+def step_tls_send_ciphers(context, ciphers):
+    context.tls_send_ciphers = ciphers
+
+
+@given('TLS send endpoint has option {opts}')
+def step_tls_send_endpoint_opts(context, opts):
+    """e.g. 'flush=true' → produces tls[flush=true]:127.0.0.1:4000"""
+    context.tls_send_endpoint_opts = opts
+    if 'hash' in opts:
+        context.hash_enabled = True
+
+
+@given('TLS send uses an expired certificate')
+def step_tls_expired_cert(context):
+    context.tls_send_cert = str(context.pki_dir / 'expired.cert.pem')
+    context.tls_send_key  = str(context.pki_dir / 'expired.key.pem')
+
+
+@given('TLS send uses a certificate from a wrong CA')
+def step_tls_wrong_ca_cert(context):
+    context.tls_send_cert = str(context.pki_dir / 'wrong.cert.pem')
+    context.tls_send_key  = str(context.pki_dir / 'wrong.key.pem')
+
+
+@given('TLS send uses a non-existent certificate path')
+def step_tls_missing_cert(context):
+    context.tls_send_cert = '/nonexistent/path/server.cert.pem'
+
+
+@given('TLS send uses a non-existent key path')
+def step_tls_missing_key(context):
+    context.tls_send_key = '/nonexistent/path/server.key.pem'
+
+
+@given('TLS send uses a non-existent CA path')
+def step_tls_missing_ca(context):
+    context.tls_send_ca = '/nonexistent/path/ca.cert.pem'
+
+
+@given('TLS send uses a mismatched key and certificate')
+def step_tls_mismatched_key_cert(context):
+    context.tls_send_cert = str(context.pki_dir / 'server.cert.pem')
+    context.tls_send_key  = str(context.pki_dir / 'client.key.pem')
+
+
+@given('TLS send uses an invalid cipher string')
+def step_tls_invalid_ciphers(context):
+    context.tls_send_ciphers = 'NOT_A_VALID_CIPHER_SUITE'
+
+
+@when('send file {name} via TLS connection of size {size}')
+def step_file_send_tls(context, name, size):
+    """Send a file using TLS to lidi-send (CA verification, no client cert)."""
+    filename = os.path.join(context.send_dir, name)
+    create_file(context, filename, size)
+    start_lidi_file_send_tls(context, name, mtls=False)
+
+
+@when('send file {name} via mutual TLS connection of size {size}')
+def step_file_send_mtls(context, name, size):
+    """Send a file with full mutual TLS (client presents its certificate)."""
+    filename = os.path.join(context.send_dir, name)
+    create_file(context, filename, size)
+    start_lidi_file_send_tls(context, name, mtls=True)
+
+
+@then('the file {name} is not received within {seconds:d} seconds')
+def step_file_not_received(context, name, seconds):
+    """Assert the file does NOT appear in the receive directory within the timeout."""
+    import time as time_module
+    deadline = time_module.time() + seconds
+    target = os.path.join(context.receive_dir, name)
+    while time_module.time() < deadline:
+        if os.path.exists(target):
+            raise AssertionError(f'File {name} was unexpectedly received')
+        time_module.sleep(0.5)
+
+
+@then('a TLS 1.2 connection attempt to lidi-send on port {port:d} is rejected')
+def step_tls12_rejected(context, port):
+    """Verify that openssl s_client with TLS 1.2 is rejected."""
+    import subprocess
+    result = subprocess.run([
+        'openssl', 's_client', '-connect', f'127.0.0.1:{port}',
+        '-CAfile', str(context.pki_dir / 'ca.cert.pem'),
+        '-tls1_2',
+    ], input=b'', capture_output=True, timeout=5)
+    output = (result.stdout + result.stderr).decode('utf-8', errors='ignore')
+    assert any(kw in output.lower() for kw in ['alert', 'handshake failure', 'error', 'protocol']), \
+        f'Expected TLS 1.2 to be rejected, but output was:\n{output}'

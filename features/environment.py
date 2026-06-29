@@ -5,9 +5,11 @@ import signal
 import subprocess
 import time
 import os
+from pathlib import Path
 
 from features.steps.lidi import stop_throttled_diode
 from features.steps.utils import kill_process_safe
+from features.steps.tls_pki import generate_pki
 
 # function called before any feature or scenario
 def before_all(context):
@@ -65,6 +67,13 @@ def before_scenario(context, _feature):
     os.makedirs(context.send_dir, exist_ok=True)
     os.makedirs(context.receive_dir, exist_ok=True)
     os.makedirs(context.log_dir, exist_ok=True)
+
+    # Generate test PKI for TLS tests
+    context.pki_dir = Path(context.base_dir) / 'pki'
+    try:
+        generate_pki(context.pki_dir)
+    except Exception as e:
+        print(f"Warning: Failed to generate PKI: {e}")
 
     # files metadata
     context.files = {}

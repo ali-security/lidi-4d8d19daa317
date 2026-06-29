@@ -1,6 +1,7 @@
 # functions to be called before or after tests must be put here
 
 from tempfile import TemporaryDirectory
+import signal
 import subprocess
 import time
 import os
@@ -111,12 +112,32 @@ def before_scenario(context, _feature):
     context.log_config_network_behavior = None
 
     context.lidi_config_path = context.base_dir
-    
+
+    # file_receive scenario state
+    context._file_receive_suspended = False
+    context._receive_dir_was_readonly = False
+
     # setup logging configuration
     setup_log_config(context, context.log_dir)
 
 # function called after every test : cleanup (delete temp directories & kill processes)
 def after_scenario(context, _scenario):
+    # Resume a SIGSTOPped lidi-file-receive so SIGKILL is delivered cleanly.
+    # SIGKILL works on stopped processes too, but SIGCONT first avoids any edge cases.
+    proc_frc = getattr(context, 'proc_lidi_receive_file', None)
+    if proc_frc and proc_frc.poll() is None and context._file_receive_suspended:
+        try:
+            os.kill(proc_frc.pid, signal.SIGCONT)
+        except (ProcessLookupError, OSError):
+            pass
+
+    # Restore receive_dir permissions so shutil.rmtree can clean it up.
+    if context._receive_dir_was_readonly:
+        try:
+            os.chmod(context.receive_dir, 0o755)
+        except OSError:
+            pass
+
     stop_throttled_diode(context)
 
     # Kill concurrent processes from multi-client tests

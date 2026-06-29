@@ -180,7 +180,16 @@ def build_lidi_receive_file_command(context):
     if getattr(context, 'hash_receive', False):
         lidi_receive_file_command.append('--hash')
 
-    lidi_receive_file_command.append(context.receive_dir)
+    receive_buffer_size = getattr(context, 'receive_file_buffer_size', None)
+    if receive_buffer_size is not None:
+        lidi_receive_file_command += ['--buffer-size', str(receive_buffer_size)]
+
+    max_files = getattr(context, 'receive_file_max_files', None)
+    if max_files is not None:
+        lidi_receive_file_command += ['--max-files', str(max_files)]
+
+    receive_dir = getattr(context, 'receive_dir_override', None) or context.receive_dir
+    lidi_receive_file_command.append(receive_dir)
 
     return lidi_receive_file_command
 

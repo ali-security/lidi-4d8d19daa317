@@ -260,6 +260,25 @@ def send_multiple_files(context):
     send_file_command(context, file_paths, background=False)
 
 
+def start_diode_no_file_receive(context):
+    """Start lidi-receive + lidi-send without starting lidi-file-receive."""
+    network_simulator_command = build_network_simulator_command(context)
+
+    if network_simulator_command:
+        context.proc_network = subprocess.Popen(network_simulator_command)
+        time.sleep(PROCESS_READY_DELAY)
+
+    start_lidi_receive(context)
+    start_lidi_send(context)
+
+
+def start_throttled_diode_no_file_receive(context, read_rate: str):
+    """Start throttled lidi-receive + lidi-send without lidi-file-receive."""
+    context.tc_shaper = TcUdpShaper(rate=read_rate, port=5000)
+    context.tc_shaper.setup()
+    start_diode_no_file_receive(context)
+
+
 def start_udp_tunnel_diode(context):
     """Start lidi diode configured for UDP tunnel tests (no lidi-file components).
 

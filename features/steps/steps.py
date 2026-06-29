@@ -198,7 +198,30 @@ def step_lidi_started_with_max_throughput(context, throughput):
     context.read_rate = throughput
     start_throttled_diode(context, context.read_rate)
 
-from features.steps.tc_shaper import TcUdpShaper
+from features.steps.tc_shaper import TcUdpShaper, TcDelayPortShaper
+
+@given('lidi is started with {n:d} UDP ports where port {delayed_port:d} has a {delay_ms:d}ms delay')
+def step_lidi_started_with_n_ports_delayed_port(context, n, delayed_port, delay_ms):
+    """Start lidi with n UDP ports, delaying one port to expose the pending_start race.
+
+    With two UDP workers competing on the shared for_udp queue, the worker assigned
+    to the delayed port delivers its encoded blocks (potentially the Start block) at the
+    receiver consistently later than blocks delivered by the undelayed port.  Without the
+    pending_start buffer added in dispatch.rs, a Data block that arrives before its
+    corresponding Start is silently dropped and the transfer stalls until abort_timeout.
+
+    Using a pure network delay (netem) rather than bandwidth-limiting ensures that End
+    blocks, which are encoded last and sent by the fast-port worker long after Start, still
+    arrive at the dispatch thread well after Start.  This prevents the secondary failure
+    mode where End arrives at pending_start before Start consumes the buffered entry.
+    """
+    if n < 2:
+        raise ValueError(f"Expected at least 2 ports, got {n}")
+    context.extra_udp_ports = list(range(5001, 5000 + n))
+    context.tc_shaper = TcDelayPortShaper(delayed_port=delayed_port, delay_ms=delay_ms)
+    context.tc_shaper.setup()
+    start_diode(context)
+
 @given('lidi-send is started with max throughput of {throughput}')
 def step_lidi_send_started_with_max_throughput(context, throughput):
     # throughput format: tc notation (e.g., "100mbit", "990kbit")

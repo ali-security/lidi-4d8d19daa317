@@ -1506,7 +1506,6 @@ def step_verify_packet_size(context, size):
 def step_transition_to_e2e(context):
     context.udp_counter.stop()
     stop_lidi_send(context)
-    time.sleep(1)
     start_diode(context)
 
 

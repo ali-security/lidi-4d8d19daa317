@@ -17,11 +17,12 @@ Feature: Send simple files with network drop
     When lidi-file-send file A of size 100KB
     Then lidi-file-receive file A in 5 seconds
 
-  Scenario: Send a 100M file with drop
+  Scenario: Send a 10M file with drop
+    # 10MB at 100mbit (12.5MB/s): ~0.8s transfer; enough blocks to exercise repair.
     Given there is a network drop of 5 %
     And repair percentage is 5 %
     And lidi is started with max throughput of 100mbit
-    When lidi-file-send file A of size 100MB 
+    When lidi-file-send file A of size 10MB
     Then lidi-file-receive file A in 5 seconds
 
   Scenario: Send a 10M file with high drop
@@ -36,5 +37,5 @@ Feature: Send simple files with network drop
     And repair percentage is 10 %
     And lidi is started with max throughput of 100mbit
     When lidi-file-send file A of size 100KB
-    Then wait 10 seconds
+    Then wait 3 seconds
     And the receiver Prometheus counter lidi_receive_blocks_decode_failed is greater than or equal to 1

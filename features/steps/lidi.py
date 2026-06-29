@@ -35,15 +35,19 @@ from features.steps.tc_shaper import TcUdpShaper
 from features.steps.utils import stop_process, nice
 
 
-def wait_for_port_bound(port, tcp=True, timeout=5.0):
+def wait_for_port_bound(port, tcp=True, timeout=5.0, proc=None):
     """Return True when ss shows the port is listening/bound.
 
     Uses ss instead of a connection attempt so the target process is not
-    affected by a spurious incoming connection.
+    affected by a spurious incoming connection.  If proc is given and it exits
+    before the port is bound, return False immediately (avoids waiting the full
+    timeout when a process fails to start, e.g. max_clients=0).
     """
     flag = '-tlnH' if tcp else '-ulnH'
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
+        if proc is not None and proc.poll() is not None:
+            return False
         try:
             result = subprocess.run(
                 ['ss', flag, f'sport = :{port}'],
@@ -69,7 +73,7 @@ def start_lidi_receive(context, capture_output=False):
 
     udp_port = getattr(context, '_lidi_receive_udp_port', 5000)
     timeout = 30.0 if getattr(context, 'valgrind_receive', False) else 5.0
-    wait_for_port_bound(udp_port, tcp=False, timeout=timeout)
+    wait_for_port_bound(udp_port, tcp=False, timeout=timeout, proc=context.proc_lidi_receive)
 
     poll = context.proc_lidi_receive.poll()
     if poll is not None:
@@ -132,7 +136,7 @@ def start_lidi_send(context, capture_output=False):
         context.proc_lidi_send = subprocess.Popen(lidi_send_command)
 
     timeout = 30.0 if getattr(context, 'valgrind_send', False) else 5.0
-    wait_for_port_bound(context.tcp_send_port, tcp=True, timeout=timeout)
+    wait_for_port_bound(context.tcp_send_port, tcp=True, timeout=timeout, proc=context.proc_lidi_send)
 
     poll = context.proc_lidi_send.poll()
     if poll is not None:

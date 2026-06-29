@@ -1,7 +1,6 @@
 Feature: Multi-client support (max_clients parameter)
 
   # Group 0: Degenerate case max_clients=0
-  @wip
   Scenario: T-MC0.1 — max_clients=0 — neither lidi-send nor lidi-receive starts
     Given lidi-send fails to start with max_clients set to 0
     And lidi-receive fails to start with max_clients set to 0

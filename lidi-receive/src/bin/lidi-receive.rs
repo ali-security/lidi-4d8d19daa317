@@ -106,6 +106,12 @@ fn main() {
         return;
     }
 
+    // Validate max_clients is greater than 0
+    if config.common.max_clients() == 0 {
+        eprintln!("configuration error: max_clients must be greater than 0 (got 0)");
+        std::process::exit(1);
+    }
+
     // Validate MTU minimum (1280 is IPv6 minimum)
     let mtu = config.common.mtu();
     if mtu < 1280 {

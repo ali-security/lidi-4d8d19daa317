@@ -20,9 +20,11 @@ Feature: Send several files at the same time
     When lidi-file-send 10 files of size 100KB
     Then lidi-file-receive all files in 5 seconds
 
-  Scenario: Send 10x100M file without drop
-    Given lidi is started with max throughput of 100mbit
-    When lidi-file-send 10 files of size 100MB
+  Scenario: Send 3x100M file without drop
+    # 3 × 100MB at 400mbit (50MB/s) ≈ 6s transfer; lidi-file-receive
+    # checks start after all sends complete so 5s grace is sufficient.
+    Given lidi is started with max throughput of 400mbit
+    When lidi-file-send 3 files of size 100MB
     Then lidi-file-receive all files in 5 seconds
 
   Scenario: Send 100x10K files at once

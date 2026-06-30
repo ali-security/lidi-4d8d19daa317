@@ -24,8 +24,8 @@ impl lidi_receive::ClientLifecycle for Lifecycle {
                 #[cfg(not(feature = "to-tcp"))]
                 {
                     let _ = address;
-                    Err(lidi_receive::Error::Io(io::Error::new(
-                        io::ErrorKind::Unsupported,
+                    Err(lidi_receive::Error::Io(std::io::Error::new(
+                        std::io::ErrorKind::Unsupported,
                         "TCP endpoint not available (was not enabled at compilation)",
                     )))
                 }
@@ -39,8 +39,8 @@ impl lidi_receive::ClientLifecycle for Lifecycle {
                 #[cfg(not(feature = "to-tls"))]
                 {
                     let _ = address;
-                    Err(lidi_receive::Error::Io(io::Error::new(
-                        io::ErrorKind::Unsupported,
+                    Err(lidi_receive::Error::Io(std::io::Error::new(
+                        std::io::ErrorKind::Unsupported,
                         "TLS endpoint not available (was not enabled at compilation)",
                     )))
                 }
@@ -54,8 +54,8 @@ impl lidi_receive::ClientLifecycle for Lifecycle {
                 #[cfg(not(feature = "to-unix"))]
                 {
                     let _ = path;
-                    Err(lidi_receive::Error::Io(io::Error::new(
-                        io::ErrorKind::Unsupported,
+                    Err(lidi_receive::Error::Io(std::io::Error::new(
+                        std::io::ErrorKind::Unsupported,
                         "Unix endpoint not available (was not enabled at compilation)",
                     )))
                 }

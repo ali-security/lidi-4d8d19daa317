@@ -29,9 +29,11 @@ use lidi_command_utils::config;
 #[cfg(feature = "to-tls")]
 use lidi_command_utils::tls;
 use lidi_protocol as protocol;
+#[cfg(any(feature = "to-tcp", feature = "prometheus"))]
+use std::net;
 #[cfg(feature = "to-unix")]
 use std::os::unix;
-use std::{fmt, io, net, os, thread, time};
+use std::{fmt, io, os, thread, time};
 
 mod client;
 mod client_reorder;

@@ -4,7 +4,7 @@ use std::collections;
 
 pub fn start<Lifecycle>(
     receiver: &crate::Receiver<Lifecycle>,
-    thread_number: u32,
+    #[allow(unused)] thread_number: u32,
     client_id: protocol::ClientId,
     recvq: &crossbeam_channel::Receiver<protocol::Block>,
     to_client: &crossbeam_channel::Sender<protocol::Block>,

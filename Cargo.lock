@@ -703,6 +703,7 @@ dependencies = [
  "log",
  "log4rs",
  "metrics-exporter-prometheus",
+ "mimalloc",
  "openssl",
  "serde",
  "simplelog",
@@ -728,7 +729,6 @@ dependencies = [
  "lidi-protocol",
  "log",
  "metrics",
- "mimalloc",
  "raptorq",
 ]
 

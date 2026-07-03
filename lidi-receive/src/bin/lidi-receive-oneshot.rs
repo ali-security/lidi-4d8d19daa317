@@ -42,6 +42,9 @@ fn main() {
 
     let mut config = config::ReceiveConfig::from(config);
 
+    #[cfg(feature = "mimalloc")]
+    log::info!("using mimalloc as global allocator");
+
     let raptorq = match protocol::RaptorQ::new(
         config.common.mtu(),
         config.common.block(),

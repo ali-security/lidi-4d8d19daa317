@@ -29,6 +29,12 @@ optional = true
 default-features = false
 features = [ "compound_policy", "config_parsing", "console_appender", "file_appender", "rolling_file_appender", "size_trigger", "threshold_filter", "time_trigger", "yaml_format" ]
 
+[dependencies.mimalloc]
+version = "0"
+optional = true
+default-features = false
+features = [ ]
+
 [dependencies.openssl]
 version = "0"
 optional = true
@@ -66,5 +72,6 @@ default = [ ]
 command-line = [ "dep:clap" ]
 hash = [ "dep:twox-hash" ]
 log4rs = [ "dep:log4rs" ]
+mimalloc = [ "dep:mimalloc" ]
 prometheus = [ "dep:metrics-exporter-prometheus" ]
 tls = [ "dep:openssl" ]

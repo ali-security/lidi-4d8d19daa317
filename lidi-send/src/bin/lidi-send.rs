@@ -227,6 +227,9 @@ fn main() {
 
     let config = config::SendConfig::from(config);
 
+    #[cfg(feature = "mimalloc")]
+    log::info!("using mimalloc as global allocator");
+
     // Validate that at least one endpoint is configured
     if config.send.from().is_empty() {
         log::error!(

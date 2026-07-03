@@ -8,10 +8,6 @@ use std::net;
 use std::os::unix;
 use std::thread;
 
-#[cfg(feature = "mimalloc")]
-#[global_allocator]
-static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
-
 struct Lifecycle {
     #[cfg(feature = "to-tls")]
     tls: lidi_command_utils::tls::ClientContext,

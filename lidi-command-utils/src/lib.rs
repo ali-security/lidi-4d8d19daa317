@@ -9,6 +9,10 @@ pub mod socket;
 #[cfg(feature = "tls")]
 pub mod tls;
 
+#[cfg(feature = "mimalloc")]
+#[global_allocator]
+static GLOBAL_ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 pub enum Error {
     Arguments(String),
     Config(config::Error),

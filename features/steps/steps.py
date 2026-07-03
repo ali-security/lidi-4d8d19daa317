@@ -2875,7 +2875,7 @@ def step_assert_memory_during_pause(context, mb):
     """Assert that lidi-receive RSS did not grow by more than mb MB during pause.
 
     Used for to_clients (Issue 4, lib.rs:283) which has no Prometheus metric yet.
-    When client_0 is starved it cannot drain to_clients nor write to TCP, so the
+    When reorder_0 is starved it cannot drain to_clients nor write to TCP, so the
     per-client queue fills and memory grows.
     """
     start = getattr(context, 'thread_pause_memory_start_mb', 0) or 0

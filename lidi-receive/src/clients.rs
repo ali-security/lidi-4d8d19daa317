@@ -25,7 +25,7 @@ where
                 .map_or_else(crossbeam_channel::unbounded, crossbeam_channel::bounded);
 
             thread::Builder::new()
-                .name(format!("client_{thread_number}_reorder"))
+                .name(format!("reorder_{thread_number}"))
                 .spawn_scoped(scope, move || {
                     if let Err(e) = client_reorder::start(
                         receiver,

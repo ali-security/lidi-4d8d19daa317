@@ -7,6 +7,8 @@ use lidi_protocol as protocol;
 use std::time;
 use std::{collections, thread};
 
+const WINDOW_WIDTH: protocol::ClientId = protocol::ClientId::MAX / 2;
+
 #[allow(clippy::too_many_lines)]
 pub fn start<Lifecycle>(receiver: &crate::Receiver<Lifecycle>) -> Result<(), crate::Error>
 where
@@ -51,6 +53,8 @@ where
 
             let actives = receiver.active_transfers.clone();
             for (client_id, client_sendq) in actives {
+                receiver.failed_transfers.insert(client_id);
+
                 let block = protocol::Block::new(
                     None,
                     protocol::BlockType::Abort,
@@ -82,6 +86,10 @@ where
         };
 
         let client_id = block.client_id();
+
+        if receiver.failed_transfers.contains(&client_id) {
+            continue;
+        }
 
         match block_type {
             protocol::BlockType::Heartbeat => {
@@ -117,6 +125,13 @@ where
                         receiver
                             .to_clients
                             .send((endpoint_id, client_id, client_recvq))?;
+
+                        let mut id = client_id;
+                        let last = id.wrapping_add(WINDOW_WIDTH);
+                        while id != last {
+                            receiver.failed_transfers.remove(&id);
+                            id = id.wrapping_add(1);
+                        }
                     }
                 }
             }
@@ -129,6 +144,7 @@ where
                             metrics::counter!("lidi_receive_client_queue_full").increment(1);
                             log::error!("failed to send block to client {client_id:x}: {e}");
                             oe.remove();
+                            receiver.failed_transfers.insert(client_id);
                         }
                     }
                     dashmap::Entry::Vacant(_) => match pending_start.entry(client_id) {
@@ -138,6 +154,7 @@ where
                                 metrics::counter!("lidi_receive_client_queue_full").increment(1);
                                 log::error!("failed to send block to client {client_id:x}: {e}");
                                 oe.remove();
+                                receiver.failed_transfers.insert(client_id);
                             }
                         }
                         collections::hash_map::Entry::Vacant(ve) => {
@@ -157,10 +174,13 @@ where
                                     log::error!(
                                         "failed to send block to client {client_id:x}: {e}"
                                     );
+                                    receiver.failed_transfers.insert(client_id);
                                 })
                                 .is_ok()
                             {
                                 ve.insert((client_sendq, client_recvq));
+                            } else {
+                                receiver.failed_transfers.insert(client_id);
                             }
                         }
                     },

@@ -19,6 +19,8 @@ where
             continue;
         };
 
+        let mut failed = false;
+
         thread::scope(|scope| {
             let (to_client, for_client) = recvq
                 .capacity()
@@ -35,7 +37,7 @@ where
                         &to_client,
                         endpoint.options().hash,
                     ) {
-                        log::error!("client reorder error {client_id:x}: {e}");
+                        log::error!("client {client_id:x} reorder error: {e}");
                     }
 
                     let _ = recvq;
@@ -47,12 +49,17 @@ where
 
             if let Err(e) = client_res {
                 log::error!("client {client_id:x}: {e}");
+                failed = true;
             }
 
             let _ = for_client;
         });
 
         receiver.active_transfers.remove(&client_id);
+
+        if failed {
+            receiver.failed_transfers.insert(client_id);
+        }
 
         thread::yield_now();
     }

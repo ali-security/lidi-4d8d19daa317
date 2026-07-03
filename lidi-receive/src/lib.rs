@@ -248,6 +248,7 @@ where
     #[cfg(all(feature = "prometheus", not(feature = "receive-mmsg")))]
     reblock_queues:
         std::sync::Arc<std::sync::Mutex<Vec<crossbeam_channel::Receiver<raptorq::EncodingPacket>>>>,
+    failed_transfers: dashmap::DashSet<protocol::ClientId>,
     #[cfg(all(feature = "prometheus", feature = "receive-mmsg"))]
     reblock_queues: std::sync::Arc<
         std::sync::Mutex<Vec<crossbeam_channel::Receiver<Vec<raptorq::EncodingPacket>>>>,
@@ -343,6 +344,7 @@ where
             to_clients,
             for_clients,
             active_transfers: dashmap::DashMap::new(),
+            failed_transfers: dashmap::DashSet::new(),
             #[cfg(feature = "prometheus")]
             reblock_queues: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
             client_lifecycle,

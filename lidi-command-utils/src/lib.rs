@@ -13,7 +13,7 @@ pub mod tls;
 #[global_allocator]
 static GLOBAL_ALLOCATOR: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
-#[cfg(feature = "mimalloc")]
+#[cfg(all(not(feature = "jemalloc"), feature = "mimalloc"))]
 #[global_allocator]
 static GLOBAL_ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
 

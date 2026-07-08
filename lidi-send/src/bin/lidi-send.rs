@@ -229,7 +229,7 @@ fn main() {
 
     #[cfg(feature = "jemalloc")]
     log::info!("using jemalloc as global allocator");
-    #[cfg(feature = "mimalloc")]
+    #[cfg(all(not(feature = "jemalloc"), feature = "mimalloc"))]
     log::info!("using mimalloc as global allocator");
 
     // Validate that at least one endpoint is configured

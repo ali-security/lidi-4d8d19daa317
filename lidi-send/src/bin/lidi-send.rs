@@ -227,6 +227,8 @@ fn main() {
 
     let config = config::SendConfig::from(config);
 
+    #[cfg(feature = "jemalloc")]
+    log::info!("using jemalloc as global allocator");
     #[cfg(feature = "mimalloc")]
     log::info!("using mimalloc as global allocator");
 

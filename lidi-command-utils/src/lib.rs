@@ -9,6 +9,10 @@ pub mod socket;
 #[cfg(feature = "tls")]
 pub mod tls;
 
+#[cfg(feature = "jemalloc")]
+#[global_allocator]
+static GLOBAL_ALLOCATOR: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
 #[cfg(feature = "mimalloc")]
 #[global_allocator]
 static GLOBAL_ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;

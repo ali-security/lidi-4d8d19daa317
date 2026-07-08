@@ -42,6 +42,8 @@ fn main() {
 
     let mut config = config::ReceiveConfig::from(config);
 
+    #[cfg(feature = "jemalloc")]
+    log::info!("using jemalloc as global allocator");
     #[cfg(feature = "mimalloc")]
     log::info!("using mimalloc as global allocator");
 

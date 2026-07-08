@@ -17,10 +17,10 @@ fn main() {
         }
     };
 
-    #[cfg(feature = "jemalloc")]
-    log::info!("using jemalloc as global allocator");
-    #[cfg(all(not(feature = "jemalloc"), feature = "mimalloc"))]
-    log::info!("using mimalloc as global allocator");
+    log::info!(
+        "using {} as global allocator",
+        lidi_command_utils::ALLOCATOR_NAME
+    );
 
     let mut config = config::SendConfig::from(config);
 

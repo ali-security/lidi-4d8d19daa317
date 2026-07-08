@@ -93,10 +93,10 @@ fn main() {
 
     let config = config::ReceiveConfig::from(config);
 
-    #[cfg(feature = "jemalloc")]
-    log::info!("using jemalloc as global allocator");
-    #[cfg(all(not(feature = "jemalloc"), feature = "mimalloc"))]
-    log::info!("using mimalloc as global allocator");
+    log::info!(
+        "using {} as global allocator",
+        lidi_command_utils::ALLOCATOR_NAME
+    );
 
     // Validate that at least one endpoint is configured
     if config.receive.to().is_empty() {

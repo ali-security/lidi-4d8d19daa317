@@ -117,6 +117,10 @@ where
                                 }
                             });
 
+                        #[cfg(feature = "prometheus")]
+                        metrics::gauge!("lidi_receive_pending_start_count")
+                            .set(pending_start.len() as f64);
+
                         receiver
                             .active_transfers
                             .entry(client_id)
@@ -147,43 +151,54 @@ where
                             receiver.failed_transfers.insert(client_id);
                         }
                     }
-                    dashmap::Entry::Vacant(_) => match pending_start.entry(client_id) {
-                        collections::hash_map::Entry::Occupied(oe) => {
-                            if let Err(e) = oe.get().0.try_send(block) {
-                                #[cfg(feature = "prometheus")]
-                                metrics::counter!("lidi_receive_client_queue_full").increment(1);
-                                log::error!("failed to send block to client {client_id:x}: {e}");
-                                oe.remove();
-                                receiver.failed_transfers.insert(client_id);
-                            }
-                        }
-                        collections::hash_map::Entry::Vacant(ve) => {
-                            let (client_sendq, client_recvq) =
-                                if 0 < receiver.config.client_queue_size {
-                                    crossbeam_channel::bounded(receiver.config.client_queue_size)
-                                } else {
-                                    crossbeam_channel::unbounded()
-                                };
-
-                            if client_sendq
-                                .try_send(block)
-                                .inspect_err(|e| {
+                    dashmap::Entry::Vacant(_) => {
+                        match pending_start.entry(client_id) {
+                            collections::hash_map::Entry::Occupied(oe) => {
+                                if let Err(e) = oe.get().0.try_send(block) {
                                     #[cfg(feature = "prometheus")]
                                     metrics::counter!("lidi_receive_client_queue_full")
                                         .increment(1);
                                     log::error!(
                                         "failed to send block to client {client_id:x}: {e}"
                                     );
+                                    oe.remove();
                                     receiver.failed_transfers.insert(client_id);
-                                })
-                                .is_ok()
-                            {
-                                ve.insert((client_sendq, client_recvq));
-                            } else {
-                                receiver.failed_transfers.insert(client_id);
+                                }
+                            }
+                            collections::hash_map::Entry::Vacant(ve) => {
+                                let (client_sendq, client_recvq) = if 0 < receiver
+                                    .config
+                                    .client_queue_size
+                                {
+                                    crossbeam_channel::bounded(receiver.config.client_queue_size)
+                                } else {
+                                    crossbeam_channel::unbounded()
+                                };
+
+                                if client_sendq
+                                    .try_send(block)
+                                    .inspect_err(|e| {
+                                        #[cfg(feature = "prometheus")]
+                                        metrics::counter!("lidi_receive_client_queue_full")
+                                            .increment(1);
+                                        log::error!(
+                                            "failed to send block to client {client_id:x}: {e}"
+                                        );
+                                        receiver.failed_transfers.insert(client_id);
+                                    })
+                                    .is_ok()
+                                {
+                                    ve.insert((client_sendq, client_recvq));
+                                } else {
+                                    receiver.failed_transfers.insert(client_id);
+                                }
                             }
                         }
-                    },
+
+                        #[cfg(feature = "prometheus")]
+                        metrics::gauge!("lidi_receive_pending_start_count")
+                            .set(pending_start.len() as f64);
+                    }
                 }
             }
         }

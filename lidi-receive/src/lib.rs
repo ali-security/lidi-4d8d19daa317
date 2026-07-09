@@ -246,13 +246,11 @@ where
     active_transfers:
         dashmap::DashMap<protocol::ClientId, crossbeam_channel::Sender<protocol::Block>>,
     #[cfg(all(feature = "prometheus", not(feature = "receive-mmsg")))]
-    reblock_queues:
-        std::sync::Arc<std::sync::Mutex<Vec<crossbeam_channel::Receiver<raptorq::EncodingPacket>>>>,
+    reblock_queues: std::sync::RwLock<Vec<crossbeam_channel::Receiver<raptorq::EncodingPacket>>>,
     failed_transfers: dashmap::DashSet<protocol::ClientId>,
     #[cfg(all(feature = "prometheus", feature = "receive-mmsg"))]
-    reblock_queues: std::sync::Arc<
-        std::sync::Mutex<Vec<crossbeam_channel::Receiver<Vec<raptorq::EncodingPacket>>>>,
-    >,
+    reblock_queues:
+        std::sync::RwLock<Vec<crossbeam_channel::Receiver<Vec<raptorq::EncodingPacket>>>>,
     client_lifecycle: Lifecycle,
 }
 
@@ -291,7 +289,7 @@ where
         loop {
             thread::sleep(timer);
 
-            if let Ok(queues) = self.reblock_queues.lock() {
+            if let Ok(queues) = self.reblock_queues.read() {
                 let reblock_total: usize =
                     queues.iter().map(crossbeam_channel::Receiver::len).sum();
                 log::debug!(
@@ -346,7 +344,7 @@ where
             active_transfers: dashmap::DashMap::new(),
             failed_transfers: dashmap::DashSet::new(),
             #[cfg(feature = "prometheus")]
-            reblock_queues: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+            reblock_queues: std::sync::RwLock::new(Vec::new()),
             client_lifecycle,
         })
     }
@@ -438,7 +436,7 @@ where
             };
 
             #[cfg(feature = "prometheus")]
-            if let Ok(mut queues) = self.reblock_queues.lock() {
+            if let Ok(mut queues) = self.reblock_queues.write() {
                 queues.push(for_reblock.clone());
             }
 

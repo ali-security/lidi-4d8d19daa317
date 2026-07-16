@@ -40,7 +40,7 @@ def build_lidi_config(context, udp_port, log_config, side='both'):
 
     # Timeout configuration
     reset_timeout = getattr(context, 'reset_timeout', 2)
-    abort_timeout = getattr(context, 'abort_timeout', 60)
+    abort_timeout = getattr(context, 'abort_timeout', 20)
     client_queue_size = getattr(context, 'client_queue_size', 4096)
     reblock_queue_size = getattr(context, 'reblock_queue_size', 0)
     dispatch_queue_size = getattr(context, 'dispatch_queue_size', 0)

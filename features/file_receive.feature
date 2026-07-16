@@ -115,6 +115,24 @@ Feature: lidi-file-receive behaviour (receiver-side edge cases)
     And lidi-file-receive log should report an error for an incomplete transfer
     And lidi-receive should still be running
 
+  Scenario: T-FRC-B2-ABORT — partial file cleaned up within abort_timeout after interrupted transfer
+    # When lidi-send is stopped mid-transfer the last RaptorQ block may decode
+    # successfully (loopback delivers source symbols in order), so no Abort is sent.
+    # client_reorder's recv_timeout(abort_timeout) is then the backstop: it exits
+    # after abort_timeout seconds without a new block, dropping to_client, which
+    # unblocks client::start and closes the TCP connection.
+    # lidi-file-receive then gets Err(InvalidFileSize) and removes the partial file.
+    #
+    # With abort_timeout = 3 s the cleanup completes well within the 4 s window.
+    Given abort_timeout is configured to 3 seconds
+    And lidi is started with max_clients set to 1 and limited to 800kbit
+    When client 1 starts sending "input_1m" of size 1MB
+    And 2 seconds are waited for slot release
+    And lidi-send is stopped
+    And 4 seconds are waited for slot release
+    Then file "input_1m" should not be received
+    And lidi-receive should still be running
+
   Scenario: T-FRC-B3 — SIGSTOP lidi-file-receive: SO_SNDTIMEO frees the slot, transfer resumes after SIGCONT
     # Fix (lidi-receive/src/client.rs): the client socket has SO_SNDTIMEO set to
     # abort_timeout. When lidi-file-receive stops reading (SIGSTOP), the OS TCP

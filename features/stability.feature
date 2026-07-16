@@ -27,19 +27,19 @@ Feature: Test ability of lidi to restart properly by itself
     And lidi-file-send file B of size 100KB
     Then lidi-file-receive file B in 5 seconds
   
-  Scenario: Send 3x10MB file with lidi-send restarts during transfer, first and last files transmitted
+  @wip
+  Scenario: Send 3x100MB file with lidi-send restarts during transfer, first and last files transmitted
     Given there is a limited network bandwidth of 100 Mb/s
-    And lidi is started with max throughput of 90mbit
-    When lidi-file-send file A of size 10MB
-    And lidi-send restarts while lidi-file-send file B of size 10MB
-    And lidi-file-send file C of size 10MB
+    And lidi is started with max throughput of 50mbit
+    When lidi-file-send file A of size 100MB
+    And lidi-send restarts while lidi-file-send file B of size 100MB
+    And lidi-file-send file C of size 100MB
     Then lidi-file-receive file A in 15 seconds
     Then lidi-file-receive file C in 15 seconds
 
-
   Scenario: Send 3x100MB file with lidi-receive restarts during transfer, first and last files transmitted
-    Given there is a limited network bandwidth of 500 Mb/s
-    And lidi is started with max throughput of 400mbit
+    Given there is a limited network bandwidth of 100 Mb/s
+    And lidi is started with max throughput of 50mbit
     When lidi-file-send file A of size 100MB
     And lidi-receive restarts while lidi-file-send file B of size 100MB
     And lidi-file-send file C of size 100MB

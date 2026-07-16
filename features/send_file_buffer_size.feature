@@ -6,7 +6,7 @@
 Feature: Test --buffer-size option with various values
 
   Scenario Outline: Send file with different buffer sizes
-    Given lidi is started
+    Given lidi is started with max throughput of 100mbit
     And buffer size is set to <buffer_size>
     When lidi-file-send file test.bin of size 1MB
     Then lidi-file-receive file test.bin in 10 seconds

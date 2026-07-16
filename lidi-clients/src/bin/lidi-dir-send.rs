@@ -104,6 +104,8 @@ fn main() {
         hash: args.hash,
         max_files: args.max_files,
         overwrite: false,
+        #[cfg(feature = "tmp-file")]
+        use_tmp_file: false,
         ignore: args.ignore,
         recursive: args.recursive,
         watch: args.watch,

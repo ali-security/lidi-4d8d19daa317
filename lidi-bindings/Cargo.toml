@@ -14,6 +14,8 @@ path = "../lidi-clients"
 default-features = false
 
 [features]
-default = [ "hash", "inotify" ]
+default = [ "hash", "inotify", "tmp-file" ]
 hash = [ "lidi-clients/hash" ]
 inotify = [ "lidi-clients/inotify" ]
+tmp-file = [ "lidi-clients/tmp-file" ]
+

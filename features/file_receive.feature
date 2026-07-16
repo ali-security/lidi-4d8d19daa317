@@ -53,29 +53,67 @@ Feature: lidi-file-receive behaviour (receiver-side edge cases)
   # Group B — lidi-file-receive failure during reception
   # ---------------------------------------------------------------------------
 
-  @wip
-  Scenario: T-FRC-B1 — kill lidi-file-receive mid-transfer: broken pipe, lidi-receive survives
+  Scenario: T-FRC-B1 — kill lidi-file-receive mid-transfer: broken pipe leaves a partial file on disk
     # Killing lidi-file-receive closes the TCP socket. The next write_all() in lidi-receive
     # returns EPIPE. The client worker exits, the pre-allocated thread loops back to
-    # for_clients.recv() and is ready for the next transfer.
-    # lidi-receive stays running (passes). The file assertion fails due to a known Rust defect:
+    # for_clients.recv() and is ready for the next transfer. lidi-receive stays running.
     #
     # Root cause (lidi-clients/src/file/receive.rs):
-    #   receive_file() opens the output file with OpenOptions::create(true) as soon as the
-    #   header is received. When lidi-file-receive is killed (SIGKILL), the OS closes the
-    #   TCP socket; receive_file() returns Err(InvalidFileSize) but never calls
-    #   fs::remove_file(). A partial (possibly 0-byte) output file remains on disk.
-    # Fix: call fs::remove_file(&file_path) in the error path of receive_file().
-    # See also: file_receive_partial_cleanup.feature (T-FRC1).
+    #   Without --use-tmp-file, receive_file() opens the final output file directly with
+    #   OpenOptions::create(true).truncate(true) as soon as the header is received. When
+    #   lidi-file-receive is killed (SIGKILL), the OS closes the TCP socket;
+    #   receive_file() returns Err(InvalidFileSize) and the partial (possibly 0-byte)
+    #   output file is left in place under its final name.
+    # Fix: use --use-tmp-file to write atomically via a temporary file. See T-FRC-B1-FIXED.
     Given lidi is started with max_clients set to 1 and limited to 800kbit
     When client 1 starts sending "input_1m" of size 1MB
     And lidi-file-receive is killed after 2 seconds
     And 5 seconds are waited for slot release
     Then lidi-receive should still be running
-    # Fails: partial "input_1m" is left on disk (partial file cleanup defect)
+    # Demonstrates the defect: a partial "input_1m" is left under its final name
+    And file "input_1m" of size 1MB should remain on disk as an incomplete file
+
+  Scenario: T-FRC-B1-FIXED — kill lidi-file-receive mid-transfer with --use-tmp-file (atomic write)
+    # Same as T-FRC-B1 but with --use-tmp-file enabled. Content is written to a uniquely
+    # named temporary file (via tempfile::NamedTempFile) and persisted atomically on
+    # success. If the process is killed mid-transfer, "input_1m" never exists in a
+    # partial state — only the orphaned .tmp file remains (cleaned up automatically on
+    # the next lidi-file-receive startup), which is harmless.
+    Given lidi-file-receive uses atomic tmp file writes
+    And lidi is started with max_clients set to 1 and limited to 800kbit
+    When client 1 starts sending "input_1m" of size 1MB
+    And lidi-file-receive is killed after 2 seconds
+    And 5 seconds are waited for slot release
+    Then lidi-receive should still be running
     And file "input_1m" should not be received
 
-  @wip
+  Scenario: T-FRC-B2 — sender stopped mid-transfer: partial file must be removed
+    # Tests the scenario where the sender (lidi-send) stops mid-transfer, not the
+    # receiver. Unlike killing lidi-file-receive (SIGKILL), stopping lidi-send allows
+    # the transfer to fail gracefully on the receiver side.
+    #
+    # Mechanism:
+    #   1. lidi-file-send sends to lidi-send over loopback TCP (no rate limit)
+    #   2. lidi-send buffers the entire file in milliseconds
+    #   3. Stopping lidi-send stops UDP transmission
+    #   4. After reset_timeout (2s), lidi-receive's block channel closes
+    #   5. Worker exits → TCP to lidi-file-receive closes → diode.read() returns 0
+    #   6. receive_file() returns Err(InvalidFileSize) with remaining > 0
+    #
+    # Root cause fix (commit 433ae0d):
+    #   receive_file() wraps write_file_content() in a match statement and calls
+    #   fs::remove_file() in the Err branch. This removes the partially written
+    #   file before returning the error, preventing incomplete files from being
+    #   mistaken for successfully received ones.
+    Given lidi is started with max_clients set to 1 and limited to 800kbit
+    When client 1 starts sending "input_1m" of size 1MB
+    And 2 seconds are waited for slot release
+    And lidi-send is stopped
+    And 6 seconds are waited for slot release
+    Then file "input_1m" should not be received
+    And lidi-file-receive log should report an error for an incomplete transfer
+    And lidi-receive should still be running
+
   Scenario: T-FRC-B3 — SIGSTOP lidi-file-receive: write_all blocks, slot never freed
     # Root cause (lidi-receive/src/client.rs): write_all() has no TCP write timeout.
     # When lidi-file-receive stops reading (SIGSTOP), the OS TCP receive buffer fills,
@@ -99,7 +137,6 @@ Feature: lidi-file-receive behaviour (receiver-side edge cases)
   # Group Q — queue_size and backpressure
   # ---------------------------------------------------------------------------
 
-  @wip
   Scenario: T-FRC-Q1 — queue_size=1, SIGSTOP: dispatch drops client but slot stays occupied
     # With queue_size=1: when lidi-file-receive stops reading, write_all() blocks,
     # the worker cannot drain recvq. The 2nd block try_send() fails → dispatch removes

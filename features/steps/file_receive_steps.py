@@ -7,6 +7,7 @@ import threading
 import time
 
 from behave import given, when, then, use_step_matcher
+from features.steps.file import parse_human_size
 from features.steps.lidi import (
     start_diode_no_file_receive,
     start_lidi_file_receive,
@@ -39,6 +40,12 @@ def step_start_file_receive_max_files(context, n):
     """Start lidi-file-receive that exits after receiving n files."""
     context.receive_file_max_files = n
     start_lidi_file_receive(context)
+
+
+@given('lidi-file-receive uses atomic tmp file writes')
+def step_use_tmp_file_writes(context):
+    """Enable --use-tmp-file flag for atomic file writes."""
+    context.use_tmp_file = True
 
 
 @given('lidi-receive is configured with queue_size of {n:d}')
@@ -137,6 +144,30 @@ def step_lidi_receive_still_running(context):
     rc = proc.poll()
     if rc is not None:
         raise Exception(f"lidi-receive has exited unexpectedly with return code {rc}")
+
+
+@then('file "{name}" of size {size} should remain on disk as an incomplete file')
+def step_partial_file_remains(context, name, size):
+    """Verify a partial file was left on disk under its final name (T-FRC-B1 defect).
+
+    Without --use-tmp-file, receive_file() opens the destination file with
+    create(true)+truncate(true) before any data arrives, so a SIGKILL of
+    lidi-file-receive mid-transfer leaves a truncated file in place.
+    """
+    output_path = os.path.join(context.receive_dir, name)
+    deadline = time.time() + 10
+    while not os.path.exists(output_path) and time.time() < deadline:
+        time.sleep(0.1)
+    if not os.path.exists(output_path):
+        raise Exception(f"file {name} does not exist, expected an incomplete file to remain")
+
+    expected_size = parse_human_size(size)
+    actual_size = os.path.getsize(output_path)
+    if actual_size >= expected_size:
+        raise Exception(
+            f"file {name} has the full size ({actual_size} bytes), "
+            f"expected a partial file (< {expected_size} bytes)"
+        )
 
 
 @then('lidi-file-receive should have exited')

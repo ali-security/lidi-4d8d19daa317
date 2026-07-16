@@ -14,6 +14,21 @@ use std::{
     path, thread,
 };
 
+#[cfg(feature = "tmp-file")]
+fn cleanup_tmp_files(output_dir: &path::Path) {
+    if let Ok(entries) = fs::read_dir(output_dir) {
+        for entry in entries.flatten() {
+            let entry_path = entry.path();
+            if entry_path.extension().is_some_and(|ext| ext == "tmp") {
+                match fs::remove_file(&entry_path) {
+                    Ok(()) => log::info!("cleaned up orphaned tmp file: {}", entry_path.display()),
+                    Err(e) => log::warn!("failed to remove tmp file {}: {e}", entry_path.display()),
+                }
+            }
+        }
+    }
+}
+
 /// # Errors
 ///
 /// Will return `Err` if `output_dir` is not a directory.
@@ -25,6 +40,11 @@ pub fn receive_files(
         return Err(file::Error::Other(String::from(
             "output_directory is not a directory",
         )));
+    }
+
+    #[cfg(feature = "tmp-file")]
+    if config.use_tmp_file {
+        cleanup_tmp_files(output_dir);
     }
 
     thread::scope(|scope| -> Result<(), file::Error> {
@@ -169,6 +189,11 @@ where
         fs::create_dir_all(parent)?;
     }
 
+    #[cfg(feature = "tmp-file")]
+    if config.use_tmp_file {
+        return receive_file_via_tmp_file(&mut diode, &header, config, &file_path);
+    }
+
     let mut file = fs::OpenOptions::new()
         .read(false)
         .write(true)
@@ -194,6 +219,47 @@ where
             Err(e)
         }
     }
+}
+
+/// Writes the file content to a uniquely-named temporary file in the same
+/// directory as `file_path`, then atomically renames it into place. If
+/// writing fails, the temporary file is automatically removed on drop.
+#[cfg(feature = "tmp-file")]
+fn receive_file_via_tmp_file<D>(
+    diode: &mut D,
+    header: &file::protocol::Header,
+    config: &file::Config<crate::DiodeReceive>,
+    file_path: &path::Path,
+) -> Result<usize, file::Error>
+where
+    D: Read + Write,
+{
+    let dir = file_path.parent().unwrap_or_else(|| path::Path::new("."));
+    let file_name = file_path
+        .file_name()
+        .ok_or_else(|| file::Error::Other(format!("invalid file path {}", file_path.display())))?;
+
+    let mut tmp = tempfile::Builder::new()
+        .prefix(file_name)
+        .suffix(".tmp")
+        .tempfile_in(dir)?;
+
+    log::debug!("setting mode to {}", header.mode);
+    tmp.as_file()
+        .set_permissions(fs::Permissions::from_mode(header.mode))?;
+
+    let received = write_file_content(diode, tmp.as_file_mut(), header, config)?;
+
+    tmp.as_file().sync_all()?;
+    let tmp_path = tmp.path().to_path_buf();
+    tmp.persist(file_path).map_err(|e| e.error)?;
+    log::debug!(
+        "atomically persisted {} to {}",
+        tmp_path.display(),
+        file_path.display()
+    );
+
+    Ok(received)
 }
 
 fn write_file_content<D>(

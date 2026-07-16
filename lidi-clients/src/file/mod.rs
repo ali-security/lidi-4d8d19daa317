@@ -16,6 +16,8 @@ pub struct Config<D> {
     pub hash: bool,
     pub max_files: usize,
     pub overwrite: bool,
+    #[cfg(feature = "tmp-file")]
+    pub use_tmp_file: bool,
     pub ignore: Option<regex::Regex>,
     pub recursive: bool,
     pub watch: bool,

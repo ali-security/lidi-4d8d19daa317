@@ -104,9 +104,7 @@ where
                 log::info!("client {client_id:x}: hash is {hash:x}");
             }
 
-            log::info!(
-                "client {client_id:x}: finished transfer, {transmitted} bytes transmitted"
-            );
+            log::info!("client {client_id:x}: finished transfer, {transmitted} bytes transmitted");
 
             break;
         }

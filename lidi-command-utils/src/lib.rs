@@ -10,19 +10,19 @@ pub mod socket;
 pub mod tls;
 
 #[cfg(all(not(feature = "jemalloc"), not(feature = "mimalloc")))]
-pub const ALLOCATOR_NAME: &'static str = "default allocator";
+pub const ALLOCATOR_NAME: &str = "default allocator";
 
 #[cfg(feature = "jemalloc")]
 #[global_allocator]
 static GLOBAL_ALLOCATOR: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 #[cfg(feature = "jemalloc")]
-pub const ALLOCATOR_NAME: &'static str = "jemalloc";
+pub const ALLOCATOR_NAME: &str = "jemalloc";
 
 #[cfg(all(not(feature = "jemalloc"), feature = "mimalloc"))]
 #[global_allocator]
 static GLOBAL_ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
 #[cfg(all(not(feature = "jemalloc"), feature = "mimalloc"))]
-pub const ALLOCATOR_NAME: &'static str = "mimalloc";
+pub const ALLOCATOR_NAME: &str = "mimalloc";
 
 pub enum Error {
     Arguments(String),

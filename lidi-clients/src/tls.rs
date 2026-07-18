@@ -129,7 +129,7 @@ impl Drop for TcpStream {
         loop {
             match io::Read::read(&mut self.0, &mut buf) {
                 Ok(0) | Err(_) => break,
-                Ok(_) => continue,
+                Ok(_) => (),
             }
         }
         let _ = self.0.get_ref().set_nonblocking(false);

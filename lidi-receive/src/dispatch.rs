@@ -118,6 +118,7 @@ where
                             });
 
                         #[cfg(feature = "prometheus")]
+                        #[allow(clippy::cast_precision_loss)]
                         metrics::gauge!("lidi_receive_pending_start_count")
                             .set(pending_start.len() as f64);
 
@@ -196,6 +197,7 @@ where
                         }
 
                         #[cfg(feature = "prometheus")]
+                        #[allow(clippy::cast_precision_loss)]
                         metrics::gauge!("lidi_receive_pending_start_count")
                             .set(pending_start.len() as f64);
                     }

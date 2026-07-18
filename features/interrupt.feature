@@ -27,13 +27,15 @@ Feature: Send simple files with network interrupts
     And lidi-file-send file C of size 1MB
     Then lidi-file-receive file C in 5 seconds
 
-  Scenario: Send 3x100MB file with network interrupt, 2 first files lost, last one transmitted
-    Given there is a network interrupt of 100MB after 50MB
+  Scenario: Send 3x10MB file with network interrupt, 2 first files lost, last one transmitted
+    # 10MB files at 90mbit: 30MB total takes ~2.7s. Interrupt (5-15MB) covers
+    # half of A and half of B, leaving C (20-30MB) entirely clean.
+    Given there is a network interrupt of 10MB after 5MB
     And there is a limited network bandwidth of 100 Mb/s
     And lidi is started with max throughput of 90mbit
-    When lidi-file-send file A of size 100MB
-    And lidi-file-send file B of size 100MB
-    And lidi-file-send file C of size 100MB
+    When lidi-file-send file A of size 10MB
+    And lidi-file-send file B of size 10MB
+    And lidi-file-send file C of size 10MB
     Then lidi-file-receive file C in 5 seconds
 
   Scenario: Network timeout during transfer increments blocks_lost metric

@@ -32,6 +32,8 @@ pub unsafe extern "C" fn diode_new_config(
         hash: false,
         max_files: 0,
         overwrite: false,
+        #[cfg(feature = "tmp-file")]
+        use_tmp_file: false,
         ignore: None,
         recursive: false,
         watch: false,
@@ -108,6 +110,8 @@ pub unsafe extern "C" fn diode_receive_files(
         hash: false,
         max_files: 0,
         overwrite: false,
+        #[cfg(feature = "tmp-file")]
+        use_tmp_file: false,
         ignore: None,
         recursive: false,
         watch: false,

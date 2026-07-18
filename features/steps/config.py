@@ -18,7 +18,8 @@ def build_lidi_config(context, udp_port, log_config, side='both'):
     """
     # Use values from tcp.config.toml example as base
     mtu = getattr(context, 'mtu', 1500) or 1500
-    ports = [int(udp_port)]
+    extra_ports = getattr(context, 'extra_udp_ports', [])
+    ports = [int(udp_port)] + [int(p) for p in extra_ports]
     block = getattr(context, 'block_size', 20_000) or 20_000
     _repair = getattr(context, 'repair', None)
     repair = _repair if _repair is not None else 1
@@ -39,11 +40,29 @@ def build_lidi_config(context, udp_port, log_config, side='both'):
 
     # Timeout configuration
     reset_timeout = getattr(context, 'reset_timeout', 2)
-    abort_timeout = getattr(context, 'abort_timeout', 60)
+    abort_timeout = getattr(context, 'abort_timeout', 20)
     client_queue_size = getattr(context, 'client_queue_size', 4096)
     reblock_queue_size = getattr(context, 'reblock_queue_size', 0)
     dispatch_queue_size = getattr(context, 'dispatch_queue_size', 0)
     clients_queue_size = getattr(context, 'clients_queue_size', 0)
+
+    # TLS send endpoint configuration
+    send_tls_enabled = getattr(context, 'tls_send_enabled', False)
+    send_flush = getattr(context, 'tcp_send_flush', False)
+    send_proto = 'tls' if send_tls_enabled else 'tcp'
+    send_opts = getattr(context, 'tls_send_endpoint_opts', '')
+    if send_opts:
+        opts = f'{send_opts},flush=true' if send_flush else send_opts
+        send_endpoint = f'{send_proto}[{opts}]:127.0.0.1:{context.tcp_send_port}'
+    elif send_flush:
+        send_endpoint = f'{send_proto}[flush=true]:127.0.0.1:{context.tcp_send_port}'
+    else:
+        send_endpoint = f'{send_proto}:127.0.0.1:{context.tcp_send_port}'
+
+    # TLS receive endpoint configuration
+    receive_tls_enabled = getattr(context, 'tls_receive_enabled', False)
+    receive_proto = 'tls' if receive_tls_enabled else 'tcp'
+    receive_endpoint = f'{receive_proto}[hash={str(hash_val).lower()},flush={str(flush).lower()}]:127.0.0.1:{context.tcp_receive_port}'
 
     # Build receive section dynamically to handle optional abort_timeout
     udp_receive_mode = getattr(context, 'udp_receive_mode', 'mmsg')
@@ -61,10 +80,13 @@ def build_lidi_config(context, udp_port, log_config, side='both'):
     if abort_timeout != 0:
         receive_lines.append(f"abort_timeout = {abort_timeout}")
 
+    # Only include Prometheus if not disabled
+    if not getattr(context, 'no_prometheus', False):
+        receive_lines.append('prometheus_listen = "127.0.0.1:9002"')
+
     receive_lines.extend([
-        'prometheus_listen = "127.0.0.1:9002"',
         f"{log_config}",
-        f'to = [ "tcp[hash={str(hash_val).lower()},flush={str(flush).lower()}]:127.0.0.1:{context.tcp_receive_port}" ]'
+        f'to = [ "{receive_endpoint}" ]'
     ])
 
     # Base configuration similar to tcp.config.toml
@@ -82,13 +104,53 @@ def build_lidi_config(context, udp_port, log_config, side='both'):
         'to = "127.0.0.1"',
         'to_bind = "0.0.0.0:0"',
         f'mode = "{udp_send_mode}"',
-        'prometheus_listen = "127.0.0.1:9001"',
-        f"{log_config}",
-        f'from = [ "tcp[hash={str(hash_val).lower()},flush={str(flush).lower()}]:127.0.0.1:{context.tcp_send_port}" ]',
-        "",
-        "[receive]",
     ]
+    # Only include Prometheus if not disabled
+    if not getattr(context, 'no_prometheus', False):
+        config_lines.append('prometheus_listen = "127.0.0.1:9001"')
+
+    config_lines.extend([
+        f"{log_config}",
+        f'from = [ "{send_endpoint}" ]',
+    ])
+
+    # Add TLS section for send side if enabled
+    if send_tls_enabled:
+        pki = context.pki_dir
+        tls_send_key  = getattr(context, 'tls_send_key',  str(pki / 'server.key.pem'))
+        tls_send_cert = getattr(context, 'tls_send_cert', str(pki / 'server.cert.pem'))
+        config_lines.extend([
+            "",
+            "[send.tls]",
+            f'key = "{tls_send_key}"',
+            f'certificate = "{tls_send_cert}"',
+        ])
+        if getattr(context, 'tls_send_ca', None):
+            config_lines.append(f'ca = "{context.tls_send_ca}"')
+        if getattr(context, 'tls_send_method', None):
+            config_lines.append(f'tls_method = "{context.tls_send_method}"')
+        if getattr(context, 'tls_send_min', None):
+            config_lines.append(f'tls_min = "{context.tls_send_min}"')
+        if getattr(context, 'tls_send_ciphers', None):
+            config_lines.append(f'ciphers = "{context.tls_send_ciphers}"')
+
+    config_lines.append("")
+    config_lines.append("[receive]")
     config_lines.extend(receive_lines)
+
+    # Add TLS section for receive side if enabled
+    if receive_tls_enabled:
+        pki = context.pki_dir
+        tls_recv_key  = getattr(context, 'tls_receive_key',  str(pki / 'client.key.pem'))
+        tls_recv_cert = getattr(context, 'tls_receive_cert', str(pki / 'client.cert.pem'))
+        tls_recv_ca   = getattr(context, 'tls_receive_ca',   str(pki / 'ca.cert.pem'))
+        config_lines.extend([
+            "",
+            "[receive.tls]",
+            f'key = "{tls_recv_key}"',
+            f'certificate = "{tls_recv_cert}"',
+            f'ca = "{tls_recv_ca}"',
+        ])
 
     return "\n".join(config_lines)
 
@@ -142,6 +204,7 @@ def build_lidi_receive_command(context):
         getattr(context, 'network_blackout_duration', None)
     )
     receiver_bind_udp_port = "6000" if has_network_simulator else "5000"
+    context._lidi_receive_udp_port = int(receiver_bind_udp_port)
 
     lidi_config = write_lidi_config(context, "lidi_receive.toml", receiver_bind_udp_port, context.log_config_lidi_receive, side='receive')
 
@@ -172,7 +235,19 @@ def build_lidi_receive_file_command(context):
     if getattr(context, 'hash_receive', False):
         lidi_receive_file_command.append('--hash')
 
-    lidi_receive_file_command.append(context.receive_dir)
+    if getattr(context, 'use_tmp_file', False):
+        lidi_receive_file_command.append('--use-tmp-file')
+
+    receive_buffer_size = getattr(context, 'receive_file_buffer_size', None)
+    if receive_buffer_size is not None:
+        lidi_receive_file_command += ['--buffer-size', str(receive_buffer_size)]
+
+    max_files = getattr(context, 'receive_file_max_files', None)
+    if max_files is not None:
+        lidi_receive_file_command += ['--max-files', str(max_files)]
+
+    receive_dir = getattr(context, 'receive_dir_override', None) or context.receive_dir
+    lidi_receive_file_command.append(receive_dir)
 
     return lidi_receive_file_command
 

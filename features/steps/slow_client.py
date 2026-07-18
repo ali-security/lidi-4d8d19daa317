@@ -158,6 +158,24 @@ def find_thread_tid(pid, thread_name):
     return None
 
 
+def wait_for_thread(pid, thread_name, timeout=2.0):
+    """Poll for a thread's TID until it appears or timeout elapses.
+
+    Some worker threads (e.g. reorder_<N>) are spawned per-client, only once
+    a client connection is fully established (TCP handshake + first Start
+    block routed through dispatch). Unlike long-lived pipeline threads
+    (reblock_<port>, dispatch, client_<N>) which exist from process start,
+    these threads may not exist yet right after firing a background transfer.
+    Returns the TID (int) or None if the thread never appeared within timeout.
+    """
+    deadline = time.time() + timeout
+    tid = find_thread_tid(pid, thread_name)
+    while tid is None and time.time() < deadline:
+        time.sleep(0.01)
+        tid = find_thread_tid(pid, thread_name)
+    return tid
+
+
 def dump_all_thread_states(pid):
     """Return {thread_name: state} for every thread in the process.
 

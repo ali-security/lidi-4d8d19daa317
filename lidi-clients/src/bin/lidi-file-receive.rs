@@ -25,6 +25,18 @@ struct Listeners {
     from_unix: Option<path::PathBuf>,
 }
 
+#[derive(clap::Args)]
+struct WriteOptions {
+    #[clap(long, help = "Overwrite existing files")]
+    overwrite: bool,
+    #[cfg(feature = "tmp-file")]
+    #[clap(
+        long,
+        help = "Write to .tmp file and rename atomically (prevents partial files on crash)"
+    )]
+    use_tmp_file: bool,
+}
+
 #[derive(Parser)]
 #[clap(about = "Receive file(s) sent by lidi-file-send through lidi.")]
 struct Args {
@@ -56,8 +68,8 @@ struct Args {
         help = "Exits after receiving max_files files"
     )]
     max_files: usize,
-    #[clap(long, help = "Overwrite existing files")]
-    overwrite: bool,
+    #[clap(flatten)]
+    write_options: WriteOptions,
     #[clap(flatten)]
     tls: lidi_clients::Tls,
     #[clap(long, help = "Chroot in output directory before receiving files")]
@@ -97,7 +109,9 @@ fn main() {
         #[cfg(feature = "hash")]
         hash: args.hash,
         max_files: args.max_files,
-        overwrite: args.overwrite,
+        overwrite: args.write_options.overwrite,
+        #[cfg(feature = "tmp-file")]
+        use_tmp_file: args.write_options.use_tmp_file,
         ignore: None,
         recursive: false,
         watch: false,

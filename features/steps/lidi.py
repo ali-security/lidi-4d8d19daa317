@@ -11,10 +11,10 @@
 #             TCP tcp_send_port         UDP 5000                         UDP 6000           TCP tcp_receive_port
 # 
 #  IP/PORT Configuration:
-#  - lidi-dir-send: TCP server on 127.0.0.1:tcp_send_port
-#  - lidi-send: UDP client on 127.0.0.1:5000 (or 6000 if network behavior), TCP server on 127.0.0.1:tcp_send_port
-#  - lidi-receive: UDP server on 127.0.0.1:5000 (or 6000 if network behavior), TCP server on 127.0.0.1:tcp_receive_port
-#  - lidi-file-receive: TCP client on 127.0.0.1:tcp_receive_port
+#  - lidi-dir-send: TCP client → 127.0.0.1:tcp_send_port
+#  - lidi-send: TCP server on 127.0.0.1:tcp_send_port, UDP sender → 127.0.0.1:5000 (or 6000 if network behavior)
+#  - lidi-receive: UDP server on 127.0.0.1:5000 (or 6000), TCP client → 127.0.0.1:tcp_receive_port
+#  - lidi-file-receive: TCP server on 127.0.0.1:tcp_receive_port
 #  - lidi-network-simulator (if used):
 #      - UDP bind on 0.0.0.0:5000
 #      - UDP to 127.0.0.1:6000
@@ -29,36 +29,87 @@ import os
 import psutil
 import subprocess
 import time
-from contextlib import contextmanager
-
-from features.steps.config import build_lidi_send_dir_command, build_lidi_send_file_command, build_lidi_receive_command, build_lidi_receive_file_command, build_lidi_send_command, build_network_simulator_command, write_lidi_config
+from features.steps.config import build_lidi_send_dir_command, build_lidi_send_file_command, build_lidi_receive_command, build_lidi_receive_file_command, build_lidi_send_command, build_network_simulator_command
 from features.steps.file import create_file
 from features.steps.tc_shaper import TcUdpShaper
-from features.steps.utils import stop_process, nice, PROCESS_READY_DELAY, PROCESS_READY_DELAY_EXTENDED
-        
-def start_lidi_receive(context):
+from features.steps.utils import stop_process, nice
+
+
+def wait_for_udp_port_free(port, timeout=2.0):
+    """Return when ss confirms the UDP port is no longer bound.
+
+    After SIGKILL, the kernel releases UDP sockets immediately; in practice
+    the loop exits on the first iteration.  The 2-second timeout is a safety
+    net for slow CI environments.
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            result = subprocess.run(
+                ['ss', '-ulnH', f'sport = :{port}'],
+                capture_output=True, text=True, timeout=0.5,
+            )
+            if not result.stdout.strip():
+                return
+        except OSError:
+            return
+        time.sleep(0.05)
+
+
+def wait_for_port_bound(port, tcp=True, timeout=5.0, proc=None):
+    """Return True when ss shows the port is listening/bound.
+
+    Uses ss instead of a connection attempt so the target process is not
+    affected by a spurious incoming connection.  If proc is given and it exits
+    before the port is bound, return False immediately (avoids waiting the full
+    timeout when a process fails to start, e.g. max_clients=0).
+    """
+    flag = '-tlnH' if tcp else '-ulnH'
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if proc is not None and proc.poll() is not None:
+            return False
+        try:
+            result = subprocess.run(
+                ['ss', flag, f'sport = :{port}'],
+                capture_output=True, text=True, timeout=0.5,
+            )
+            if result.stdout.strip():
+                return True
+        except OSError:
+            pass
+        time.sleep(0.02)
+    return False
+
+
+def start_lidi_receive(context, capture_output=False):
     """Start the lidi receive process."""
     lidi_receive_command = build_lidi_receive_command(context)
 
     context.proc_lidi_receive = subprocess.Popen(
         lidi_receive_command,
         stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE
+        stderr=subprocess.PIPE,
     )
 
-    # Wait enough time for lidi-receive to be ready
-    # Valgrind significantly slows startup, so add extra delay
-    delay = PROCESS_READY_DELAY_EXTENDED * 3 if getattr(context, 'valgrind_receive', False) else PROCESS_READY_DELAY
-    time.sleep(delay)
+    udp_port = getattr(context, '_lidi_receive_udp_port', 5000)
+    timeout = 30.0 if getattr(context, 'valgrind_receive', False) else 5.0
+    wait_for_port_bound(udp_port, tcp=False, timeout=timeout, proc=context.proc_lidi_receive)
 
-    # Check it is running
     poll = context.proc_lidi_receive.poll()
     if poll is not None:
         stdout, stderr = context.proc_lidi_receive.communicate()
-        print(f"lidi-receive failed with return code {poll}")
-        print(f"Stdout: {stdout}")
-        print(f"Stderr: {stderr}")
-        raise Exception("Can't start lidi receive")
+        if capture_output:
+            stderr_str = stderr.decode() if stderr else ""
+            print(f"lidi-receive failed with return code {poll}")
+            print(f"Stdout: {stdout}")
+            print(f"Stderr: {stderr_str}")
+            raise Exception(f"Can't start lidi receive: {stderr_str if stderr_str else 'Unknown error'}")
+        else:
+            print(f"lidi-receive failed with return code {poll}")
+            print(f"Stdout: {stdout}")
+            print(f"Stderr: {stderr}")
+            raise Exception("Can't start lidi receive")
 
     nice('lidi-receive')
 
@@ -77,10 +128,8 @@ def start_lidi_file_receive(context):
         stderr=subprocess.PIPE
     )
 
-    # Wait enough time for lidi-file-receive to be ready
-    time.sleep(PROCESS_READY_DELAY)
+    wait_for_port_bound(context.tcp_receive_port, tcp=True)
 
-    # Check it is running
     poll = context.proc_lidi_receive_file.poll()
     if poll is not None:
         stdout, stderr = context.proc_lidi_receive_file.communicate()
@@ -93,26 +142,38 @@ def stop_lidi_file_receive(context):
     """Stop the lidi file receive process."""
     stop_process(context, 'proc_lidi_receive_file')
 
-def start_lidi_send(context):
+def start_lidi_send(context, capture_output=False):
     """Start the lidi send process."""
     lidi_send_command = build_lidi_send_command(context)
 
     # Start lidi-send
-    context.proc_lidi_send = subprocess.Popen(lidi_send_command)
+    if capture_output:
+        context.proc_lidi_send = subprocess.Popen(
+            lidi_send_command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+    else:
+        context.proc_lidi_send = subprocess.Popen(lidi_send_command)
 
-    # Wait enough time for lidi-send to be ready
-    # Valgrind significantly slows startup, so add extra delay
-    delay = PROCESS_READY_DELAY_EXTENDED * 3 if getattr(context, 'valgrind_send', False) else PROCESS_READY_DELAY
-    time.sleep(delay)
+    timeout = 30.0 if getattr(context, 'valgrind_send', False) else 5.0
+    wait_for_port_bound(context.tcp_send_port, tcp=True, timeout=timeout, proc=context.proc_lidi_send)
 
-    # Check it is running
     poll = context.proc_lidi_send.poll()
     if poll is not None:
-        stdout, stderr = context.proc_lidi_send.communicate()
-        print(f"lidi-send failed with return code {poll}")
-        print(f"Stdout: {stdout}")
-        print(f"Stderr: {stderr}")
-        raise Exception("Can't start lidi send")
+        if capture_output:
+            stdout, stderr = context.proc_lidi_send.communicate()
+            stderr_str = stderr.decode() if stderr else ""
+            print(f"lidi-send failed with return code {poll}")
+            print(f"Stdout: {stdout}")
+            print(f"Stderr: {stderr_str}")
+            raise Exception(f"Can't start lidi send: {stderr_str if stderr_str else 'Unknown error'}")
+        else:
+            stdout, stderr = context.proc_lidi_send.communicate()
+            print(f"lidi-send failed with return code {poll}")
+            print(f"Stdout: {stdout}")
+            print(f"Stderr: {stderr}")
+            raise Exception("Can't start lidi send")
     nice('lidi-send')
 
 def stop_lidi_send(context):
@@ -144,19 +205,12 @@ def start_diode(context):
     """Start the complete lidi system with network simulation if needed."""
     network_simulator_command = build_network_simulator_command(context)
 
-    # Start network simulator if behavior is configured
     if network_simulator_command:
         context.proc_network = subprocess.Popen(network_simulator_command)
-        time.sleep(PROCESS_READY_DELAY)
+        wait_for_port_bound(5000, tcp=False)
 
-    # Start lidi receive file process
     start_lidi_file_receive(context)
-    time.sleep(PROCESS_READY_DELAY)
-
-    # Start lidi receive (connects to lidi-file-receive)
     start_lidi_receive(context)
-
-    # Finally start lidi send (send init packet to lidi-receive, acts as a server for lidi-file-send)
     start_lidi_send(context)
 
 
@@ -188,12 +242,13 @@ def start_lidi_send_dir(context, watch=False, ignore=None, bin_dir=None):
         stderr=subprocess.DEVNULL
     )
 
-    time.sleep(PROCESS_READY_DELAY)
+    deadline = time.monotonic() + 0.2
+    while time.monotonic() < deadline and context.proc_lidi_send_dir.poll() is None:
+        time.sleep(0.02)
 
-    # Check it is running
-    poll = context.proc_lidi_send_dir.poll()
-    if poll is not None:
-        print(f"lidi-dir-send failed with return code {poll}")
+    rc = context.proc_lidi_send_dir.poll()
+    if rc is not None:
+        print(f"lidi-dir-send failed with return code {rc}")
         raise Exception("Can't start lidi dir send")
 
 def send_file_command(context, filename, background=False):
@@ -217,6 +272,7 @@ def send_file_command(context, filename, background=False):
 
 def send_file(context, name, size, background=False):
     """Send a file with specified name and size."""
+    name = name.strip('"')
     # Create file in send directory
     filename = os.path.join(context.send_dir, name)
     create_file(context, filename, size)
@@ -231,15 +287,38 @@ def send_multiple_files(context):
     send_file_command(context, file_paths, background=False)
 
 
+def start_diode_no_file_receive(context):
+    """Start lidi-receive + lidi-send without starting lidi-file-receive."""
+    network_simulator_command = build_network_simulator_command(context)
+
+    if network_simulator_command:
+        context.proc_network = subprocess.Popen(network_simulator_command)
+        wait_for_port_bound(5000, tcp=False)
+
+    start_lidi_receive(context)
+    start_lidi_send(context)
+
+
+def start_throttled_diode_no_file_receive(context, read_rate: str):
+    """Start throttled lidi-receive + lidi-send without lidi-file-receive."""
+    context.tc_shaper = TcUdpShaper(rate=read_rate, port=5000)
+    context.tc_shaper.setup()
+    start_diode_no_file_receive(context)
+
+
 def start_udp_tunnel_diode(context):
     """Start lidi diode configured for UDP tunnel tests (no lidi-file components).
 
-    flush=true is required because lidi-udp-send keeps its TCP connection open
-    indefinitely, so lidi-receive never gets an End block to trigger a BufWriter
-    flush. Without it the data stalls in the BufWriter and never reaches
-    lidi-udp-receive.
+    flush=true is required on both sides because lidi-udp-send keeps its TCP
+    connection open indefinitely:
+    - tcp_send_flush: lidi-send flushes each partial block immediately instead
+      of waiting for block_size bytes; without this, small datagrams accumulate
+      and never get transmitted.
+    - tcp_flush: lidi-receive flushes each write to lidi-udp-receive so data
+      is not stalled in the BufWriter.
     """
     context.tcp_flush = True
+    context.tcp_send_flush = True
 
     # Start lidi-receive first (without lidi-file-receive)
     start_lidi_receive(context)
@@ -262,7 +341,7 @@ def start_lidi_udp_send(context, listen_port=5010):
         stderr=subprocess.PIPE
     )
 
-    time.sleep(PROCESS_READY_DELAY)
+    wait_for_port_bound(listen_port, tcp=False)
 
     poll = context.proc_lidi_udp_send.poll()
     if poll is not None:
@@ -296,12 +375,13 @@ def start_lidi_udp_receive(context, forward_port=5020):
         stderr=subprocess.PIPE
     )
 
-    time.sleep(PROCESS_READY_DELAY)
-
-    poll = context.proc_lidi_udp_receive.poll()
-    if poll is not None:
+    if not wait_for_port_bound(
+        context.tcp_receive_port,
+        tcp=True,
+        proc=context.proc_lidi_udp_receive,
+    ):
         stdout, stderr = context.proc_lidi_udp_receive.communicate()
-        print(f"lidi-udp-receive failed with return code {poll}")
+        print(f"lidi-udp-receive failed to bind tcp_receive_port {context.tcp_receive_port}")
         print(f"Stdout: {stdout}")
         print(f"Stderr: {stderr}")
         raise Exception("Can't start lidi-udp-receive")
@@ -312,4 +392,81 @@ def stop_lidi_udp_receive(context):
     if hasattr(context, 'proc_lidi_udp_receive') and context.proc_lidi_udp_receive:
         context.proc_lidi_udp_receive.kill()
         context.proc_lidi_udp_receive.wait()
+
+
+def start_lidi_file_send_tls(context, name, mtls=False):
+    """Send a file using lidi-file-send with TLS to lidi-send.
+
+    Args:
+        context: the test context
+        name: the filename (not including the send directory path)
+        mtls: whether to use mutual TLS (client presents certificate)
+    """
+    pki = context.pki_dir
+    filename = os.path.join(context.send_dir, name)
+    cmd = [
+        str(context.bin_dir / 'lidi-file-send') if hasattr(context.bin_dir, '__truediv__') else f'{context.bin_dir}/lidi-file-send',
+        '--to-tls', f'127.0.0.1:{context.tcp_send_port}',
+        '--tls-ca', str(pki / 'ca.cert.pem'),
+    ]
+    if mtls:
+        cmd += [
+            '--tls-key',         str(pki / 'client.key.pem'),
+            '--tls-certificate', str(pki / 'client.cert.pem'),
+        ]
+    if hasattr(context, 'log_config_lidi_send_file') and context.log_config_lidi_send_file:
+        cmd += ['--log-config', context.log_config_lidi_send_file]
+    cmd.append(filename)
+
+    context.proc_lidi_send_file = subprocess.Popen(
+        cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    )
+    context.proc_lidi_send_file.wait(timeout=10)
+
+
+def start_lidi_file_receive_tls(context):
+    """Start lidi-file-receive with TLS (acts as TLS server for lidi-receive)."""
+    pki = context.pki_dir
+    cmd = [
+        str(context.bin_dir / 'lidi-file-receive') if hasattr(context.bin_dir, '__truediv__') else f'{context.bin_dir}/lidi-file-receive',
+        '--from-tls', f'0.0.0.0:{context.tcp_receive_port}',
+        '--tls-key',         str(pki / 'server.key.pem'),
+        '--tls-certificate', str(pki / 'server.cert.pem'),
+        '--max-files', '1',
+    ]
+    if hasattr(context, 'log_config_lidi_receive_file') and context.log_config_lidi_receive_file:
+        cmd += ['--log-config', context.log_config_lidi_receive_file]
+    cmd.append(context.receive_dir)
+
+    context.proc_lidi_receive_file = subprocess.Popen(
+        cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    )
+
+    wait_for_port_bound(context.tcp_receive_port, tcp=True)
+
+    poll = context.proc_lidi_receive_file.poll()
+    if poll is not None:
+        stdout, stderr = context.proc_lidi_receive_file.communicate()
+        print(f"lidi-file-receive (TLS) failed with return code {poll}")
+        if stderr:
+            print(f"Stderr: {stderr.decode()}")
+        raise Exception("Can't start lidi-file-receive (TLS)")
+
+
+def start_diode_tls(context, send_tls=False, receive_tls=False):
+    """Start lidi diode with optional TLS on send and/or receive sides."""
+    network_simulator_command = build_network_simulator_command(context)
+
+    # Start network simulator if behavior is configured
+    if network_simulator_command:
+        context.proc_network = subprocess.Popen(network_simulator_command)
+        wait_for_port_bound(5000, tcp=False)
+
+    if receive_tls:
+        start_lidi_file_receive_tls(context)
+    else:
+        start_lidi_file_receive(context)
+
+    start_lidi_receive(context)
+    start_lidi_send(context)
 

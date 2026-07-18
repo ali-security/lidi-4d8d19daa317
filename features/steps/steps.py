@@ -9,7 +9,8 @@ import re
 import logging
 from features.steps.slow_client import (
     SlowTcpClient, get_process_memory_mb, monitor_process_memory,
-    find_thread_tid, starve_thread_via_cpu_pinning,
+    find_thread_tid, wait_for_thread, starve_thread_via_cpu_pinning,
+    ptrace_stop_thread, ptrace_resume_thread,
 )
 
 log = logging.getLogger(__name__)
@@ -120,7 +121,7 @@ class UdpServer:
             except OSError:
                 break
 
-from features.steps.lidi import create_file, send_file, send_multiple_files, start_diode, start_lidi_file_receive, start_lidi_receive, start_lidi_send, start_lidi_send_dir, start_lidi_udp_send, start_lidi_udp_receive, start_throttled_diode, start_udp_tunnel_diode, stop_lidi_file_receive, stop_lidi_graceful, stop_lidi_receive, stop_lidi_send, stop_lidi_udp_send, stop_lidi_udp_receive
+from features.steps.lidi import create_file, send_file, send_multiple_files, start_diode, start_lidi_file_receive, start_lidi_receive, start_lidi_send, start_lidi_send_dir, start_lidi_udp_send, start_lidi_udp_receive, start_throttled_diode, start_udp_tunnel_diode, stop_lidi_file_receive, stop_lidi_graceful, stop_lidi_receive, stop_lidi_send, stop_lidi_udp_send, stop_lidi_udp_receive, wait_for_port_bound
 from features.steps.file import create_and_copy_file, create_and_copy_multiple_files, create_and_move_file, parse_human_size, test_file, test_no_file
 from features.steps.config import build_lidi_send_file_command
 
@@ -148,8 +149,8 @@ def step_lidi_send_started(context):
 @when('lidi-receive is restarted')
 def step_impl(context):
     stop_lidi_receive(context)
-    # wait some time to prevent address already in use if restarted too quickly
-    time.sleep(5)
+    from features.steps.lidi import wait_for_udp_port_free
+    wait_for_udp_port_free(getattr(context, '_lidi_receive_udp_port', 5000))
     start_lidi_receive(context)
 
 @given('lidi-send is restarted')
@@ -163,8 +164,6 @@ def step_impl(context):
 @when('lidi-file-receive is restarted')
 def step_impl(context):
     stop_lidi_file_receive(context)
-    # wait some time to prevent address already in use if restarted too quickly
-    time.sleep(5)
     start_lidi_file_receive(context)
 
 @given('lidi-dir-send is started with watch and ignore dot files')
@@ -198,7 +197,30 @@ def step_lidi_started_with_max_throughput(context, throughput):
     context.read_rate = throughput
     start_throttled_diode(context, context.read_rate)
 
-from features.steps.tc_shaper import TcUdpShaper
+from features.steps.tc_shaper import TcUdpShaper, TcDelayPortShaper
+
+@given('lidi is started with {n:d} UDP ports where port {delayed_port:d} has a {delay_ms:d}ms delay')
+def step_lidi_started_with_n_ports_delayed_port(context, n, delayed_port, delay_ms):
+    """Start lidi with n UDP ports, delaying one port to expose the pending_start race.
+
+    With two UDP workers competing on the shared for_udp queue, the worker assigned
+    to the delayed port delivers its encoded blocks (potentially the Start block) at the
+    receiver consistently later than blocks delivered by the undelayed port.  Without the
+    pending_start buffer added in dispatch.rs, a Data block that arrives before its
+    corresponding Start is silently dropped and the transfer stalls until abort_timeout.
+
+    Using a pure network delay (netem) rather than bandwidth-limiting ensures that End
+    blocks, which are encoded last and sent by the fast-port worker long after Start, still
+    arrive at the dispatch thread well after Start.  This prevents the secondary failure
+    mode where End arrives at pending_start before Start consumes the buffered entry.
+    """
+    if n < 2:
+        raise ValueError(f"Expected at least 2 ports, got {n}")
+    context.extra_udp_ports = list(range(5001, 5000 + n))
+    context.tc_shaper = TcDelayPortShaper(delayed_port=delayed_port, delay_ms=delay_ms)
+    context.tc_shaper.setup()
+    start_diode(context)
+
 @given('lidi-send is started with max throughput of {throughput}')
 def step_lidi_send_started_with_max_throughput(context, throughput):
     # throughput format: tc notation (e.g., "100mbit", "990kbit")
@@ -264,7 +286,7 @@ def step_impl(context, name, size):
     # transfer is in progress, wait 1 second then restart diode
     time.sleep(3)
     stop_lidi_receive(context)
-    time.sleep(5)
+    time.sleep(2.5)
     start_lidi_receive(context)
 
 @then('lidi-file-receive file {name} in {seconds} seconds')
@@ -1333,6 +1355,8 @@ def step_verify_abort_timeout_in_log(context):
             'client idle timeout',
             'closing idle client',
             'client closed due to timeout',
+            'aborting transfer',
+            'timeout waiting for blocks',
         ]):
             return
     raise Exception("Expected abort_timeout trigger not found in receiver log after 10 s")
@@ -1485,7 +1509,6 @@ def step_verify_packet_size(context, size):
 def step_transition_to_e2e(context):
     context.udp_counter.stop()
     stop_lidi_send(context)
-    time.sleep(1)
     start_diode(context)
 
 
@@ -1667,19 +1690,16 @@ root:
         text=True
     )
 
-    # Wait a bit for the process to start/fail
-    # Configuration errors should fail quickly, but give it a bit more time to be safe
-    for i in range(10):
-        time.sleep(0.5)
-        poll = context.proc_lidi_send_test.poll()
-        if poll is not None:
-            break
+    # Wait for the process to bind its TCP port (success) or exit (failure).
+    # Extract the first TCP port from the config's "from" endpoints.
+    tcp_port_match = re.search(r'tcp[^:]*:(?:[^:]+):(\d+)', config_content)
+    tcp_port = int(tcp_port_match.group(1)) if tcp_port_match else 4000
+    wait_for_port_bound(tcp_port, tcp=True, proc=context.proc_lidi_send_test, timeout=5.0)
 
-    # Check if process is still running (success) or has crashed (failure)
+    poll = context.proc_lidi_send_test.poll()
     context.lidi_send_test_returncode = poll
     context.lidi_send_test_running = (poll is None)
 
-    # Capture any immediate output
     if poll is not None:
         _, stderr = context.proc_lidi_send_test.communicate()
         context.lidi_send_test_stderr = stderr
@@ -1728,13 +1748,11 @@ root:
         text=True
     )
 
-    # Wait for process to start/fail - give it up to 5 seconds
-    for i in range(10):
-        time.sleep(0.5)
-        poll = context.proc_lidi_send_test.poll()
-        if poll is not None:
-            break
+    tcp_port_match = re.search(r'tcp[^:]*:(?:[^:]+):(\d+)', config_content)
+    tcp_port = int(tcp_port_match.group(1)) if tcp_port_match else 4000
+    wait_for_port_bound(tcp_port, tcp=True, proc=context.proc_lidi_send_test, timeout=5.0)
 
+    poll = context.proc_lidi_send_test.poll()
     context.lidi_send_test_returncode = poll
     context.lidi_send_test_running = (poll is None)
 
@@ -1928,12 +1946,11 @@ root:
     )
 
     # Wait up to 5 seconds for process to start/fail
-    for i in range(10):
-        time.sleep(0.5)
-        poll = context.proc_lidi_receive_test.poll()
-        if poll is not None:
-            break
+    udp_port_match = re.search(r'ports\s*=\s*\[(\d+)', config_content)
+    udp_port = int(udp_port_match.group(1)) if udp_port_match else 5000
+    wait_for_port_bound(udp_port, tcp=False, proc=context.proc_lidi_receive_test, timeout=5.0)
 
+    poll = context.proc_lidi_receive_test.poll()
     context.lidi_receive_test_returncode = poll
     context.lidi_receive_test_running = (poll is None)
 
@@ -2279,6 +2296,39 @@ def step_receive_file_a_timeout(context, timeout):
     """Verify that file A is received within the timeout."""
     test_file(context, 'A', timeout)
 
+@when('wait until receiver counter {metric} reaches {min_value:d} or fail after {seconds:d} seconds')
+def step_wait_until_receiver_counter_reaches(context, metric, min_value, seconds):
+    """Poll a receiver Prometheus counter until it reaches min_value, or fail on timeout.
+
+    Exits as soon as the counter hits the threshold; raises AssertionError if
+    seconds elapse without it being reached.
+    """
+    import urllib.request
+    url = 'http://127.0.0.1:9002/metrics'
+    deadline = time.time() + seconds
+    last_value = None
+
+    while time.time() < deadline:
+        try:
+            response = urllib.request.urlopen(url, timeout=1)
+            for line in response.read().decode('utf-8').split('\n'):
+                if line.startswith(metric) and not line.startswith('#'):
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        last_value = int(float(parts[-1]))
+                        if last_value >= min_value:
+                            return
+                        break
+        except Exception:
+            pass
+        time.sleep(0.1)
+
+    raise AssertionError(
+        f"Counter {metric} did not reach {min_value} within {seconds}s "
+        f"(last value: {last_value})"
+    )
+
+
 @then('the receiver Prometheus counter {metric} is greater than or equal to {value:d}')
 def step_verify_receiver_prometheus_counter_gte(context, metric, value):
     """Verify that a receiver Prometheus counter has a value >= the expected amount."""
@@ -2464,29 +2514,36 @@ def step_verify_sender_prometheus_gauge_lte(context, metric, value):
 
 @then('the receiver Prometheus gauge {metric} is less than or equal to {value:d}')
 def step_verify_receiver_prometheus_gauge_lte(context, metric, value):
-    """Verify that a receiver Prometheus gauge has a value <= the expected amount."""
+    """Verify that a receiver Prometheus gauge has a value <= the expected amount.
+
+    Polls for up to 3 seconds because the metrics_loop in lib.rs updates gauges
+    every 1 second; a single snapshot read would race against that update cycle.
+    """
     import urllib.request
 
     url = 'http://127.0.0.1:9002/metrics'
-    try:
-        response = urllib.request.urlopen(url, timeout=2)
-        content = response.read().decode('utf-8')
+    deadline = time.time() + 3.0
+    last_value = None
 
-        # Parse the metric value from Prometheus text format
-        found = False
-        for line in content.split('\n'):
-            if line.startswith(metric) and not line.startswith('#'):
-                parts = line.split()
-                if len(parts) >= 2:
-                    metric_value = int(float(parts[-1]))
-                    found = True
-                    assert metric_value <= value, \
-                        f"Expected {metric} <= {value}, got {metric_value}"
-                    break
+    while time.time() < deadline:
+        try:
+            response = urllib.request.urlopen(url, timeout=2)
+            content = response.read().decode('utf-8')
+            for line in content.split('\n'):
+                if line.startswith(metric) and not line.startswith('#'):
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        last_value = int(float(parts[-1]))
+                        if last_value <= value:
+                            return
+                        break
+        except Exception:
+            pass
+        time.sleep(0.2)
 
-        assert found, f"Metric {metric} not found in Prometheus receiver endpoint"
-    except Exception as e:
-        raise AssertionError(f"Failed to verify receiver gauge {metric}: {e}")
+    if last_value is None:
+        raise AssertionError(f"Metric {metric} not found in Prometheus receiver endpoint")
+    raise AssertionError(f"Expected {metric} <= {value}, got {last_value} (after 3s)")
 
 # Slow client memory stress test steps
 
@@ -2629,6 +2686,32 @@ def step_resume_lidi_file_receive(context):
             pass
 
 
+@when('wait until receiver memory grows by {mb:d} MB or fail after {seconds:d} seconds')
+def step_wait_until_receiver_memory_grows(context, mb, seconds):
+    """Poll lidi-receive RSS until growth >= mb MB, or fail on timeout.
+
+    Relies on memory_at_pause_start_mb set by 'lidi-file-receive is paused'.
+    Exits as soon as the threshold is crossed; raises AssertionError otherwise.
+    """
+    pid = context.proc_lidi_receive.pid
+    start = getattr(context, 'memory_at_pause_start_mb', None) or get_process_memory_mb(pid)
+    deadline = time.time() + seconds
+    current = start
+
+    while time.time() < deadline:
+        mem = get_process_memory_mb(pid)
+        if mem is not None:
+            current = mem
+            if mem - start >= mb:
+                return
+        time.sleep(0.1)
+
+    raise AssertionError(
+        f"lidi-receive RSS grew by only {current - start:.1f} MB in {seconds}s "
+        f"(expected >= {mb} MB)"
+    )
+
+
 @then('receiver memory grew by more than {mb:d} MB during pause')
 def step_assert_memory_growth_during_client_pause(context, mb):
     """Assert that lidi-receive RSS grew by MORE than mb MB while lidi-file-receive was paused.
@@ -2755,6 +2838,59 @@ _PIPELINE_GAUGES = [
 ]
 
 
+@when('lidi-receive {thread_name} thread is paused until memory grows by {mb:d} MB or {seconds:d} seconds')
+def step_pause_until_memory_grows(context, thread_name, mb, seconds):
+    """Pause a lidi-receive thread and exit as soon as RSS grows by mb MB.
+
+    Exits early the moment memory exceeds the threshold; seconds is the maximum
+    wait before giving up (the following assertion will then fail).
+    """
+    from features.steps.memory_analyzer import MemoryAnalyzer
+
+    pid = context.proc_lidi_receive.pid
+    # reorder_<N> is spawned per-client only once a connection is fully
+    # established, unlike reblock_<port>/dispatch which exist from process
+    # start; poll briefly instead of assuming it's already there.
+    tid = wait_for_thread(pid, thread_name, timeout=2.0)
+    assert tid is not None, (
+        f"Thread '{thread_name}' not found in lidi-receive (PID {pid}) after waiting 2s. "
+        f"Known names: reblock_<port>, dispatch, reorder_0, reorder_1, …"
+    )
+
+    analyzer = MemoryAnalyzer(pid, tid)
+    context.thread_pause_analyzer = analyzer
+    context.thread_pause_max_gauges = {}
+
+    analyzer.sample_now(label="[baseline before pause]")
+    start_mb = analyzer.samples[0].rss_mb
+    context.thread_pause_memory_start_mb = start_mb
+    context.thread_pause_memory_peak_mb = start_mb
+
+    stopped = ptrace_stop_thread(pid, tid, timeout=2.0)
+    if not stopped:
+        raise RuntimeError(
+            f"ptrace failed to stop thread {tid} — "
+            f"check CAP_SYS_PTRACE / /proc/sys/kernel/yama/ptrace_scope"
+        )
+
+    try:
+        deadline = time.time() + seconds
+        while time.time() < deadline:
+            sample = analyzer.sample_now()
+            peak = max(context.thread_pause_memory_peak_mb, sample.rss_mb)
+            context.thread_pause_memory_peak_mb = peak
+            if peak - start_mb >= mb:
+                log.info(f"RSS grew by {peak - start_mb:.1f} MB ≥ {mb} MB — releasing thread early")
+                break
+            time.sleep(0.1)
+    finally:
+        ptrace_resume_thread(tid)
+
+    analyzer.sample_now(label="[final after pause]")
+    log.info(analyzer.generate_report())
+    context.thread_pause_memory_samples = [s.rss_mb for s in analyzer.samples]
+
+
 @when('lidi-receive {thread_name} thread is paused for {seconds:d} seconds')
 def step_pause_named_thread(context, thread_name, seconds):
     """Starve one named lidi-receive thread via taskset + chrt + CPU hog.
@@ -2768,10 +2904,13 @@ def step_pause_named_thread(context, thread_name, seconds):
     from features.steps.memory_analyzer import MemoryAnalyzer, get_prometheus_gauge
 
     pid = context.proc_lidi_receive.pid
-    tid = find_thread_tid(pid, thread_name)
+    # reorder_<N> is spawned per-client only once a connection is fully
+    # established, unlike reblock_<port>/dispatch which exist from process
+    # start; poll briefly instead of assuming it's already there.
+    tid = wait_for_thread(pid, thread_name, timeout=2.0)
     assert tid is not None, (
-        f"Thread '{thread_name}' not found in lidi-receive (PID {pid}). "
-        f"Known names: reblock_<port>, dispatch, client_0, client_1, …"
+        f"Thread '{thread_name}' not found in lidi-receive (PID {pid}) after waiting 2s. "
+        f"Known names: reblock_<port>, dispatch, reorder_0, reorder_1, …"
     )
 
     # Initialize analyzer
@@ -3066,3 +3205,134 @@ def step_assert_sender_memory_growth(context, mb):
         f"The to_udp queue (lib.rs:204) must be unbounded (udp_queue_size=0). "
         f"If memory did not grow enough, starvation or stress may be insufficient."
     )
+# ─── TLS Encryption Tests ───────────────────────────────────────────────────
+
+from features.steps.lidi import start_lidi_file_send_tls, start_diode_tls
+
+
+@given('lidi is started with TLS on the send side')
+def step_start_lidi_tls_send(context):
+    """Configure lidi-send as TLS server; lidi-receive stays TCP."""
+    context.tls_send_enabled = True
+    start_diode_tls(context, send_tls=True, receive_tls=False)
+
+
+@given('lidi is started with TLS on both sides')
+def step_start_lidi_tls_both(context):
+    """Configure both lidi-send and lidi-receive with TLS."""
+    context.tls_send_enabled = True
+    context.tls_receive_enabled = True
+    start_diode_tls(context, send_tls=True, receive_tls=True)
+
+
+@given('lidi is started with mutual TLS on the send side')
+def step_start_lidi_mtls_send(context):
+    """lidi-send requires client certificate (ca set → FAIL_IF_NO_PEER_CERT)."""
+    context.tls_send_enabled = True
+    context.tls_send_ca = str(context.pki_dir / 'ca.cert.pem')
+    start_diode_tls(context, send_tls=True, receive_tls=False)
+
+
+@given('TLS send method is {method}')
+def step_tls_send_method(context, method):
+    """Set tls_method in [send.tls], e.g. 'mozilla_intermediate_v5'."""
+    context.tls_send_method = method
+
+
+@given('TLS send minimum version is {version}')
+def step_tls_send_min(context, version):
+    """Set tls_min in [send.tls], e.g. 'tls1_3'."""
+    context.tls_send_min = version
+
+
+@given('TLS send cipher suite is {ciphers}')
+def step_tls_send_ciphers(context, ciphers):
+    context.tls_send_ciphers = ciphers
+
+
+@given('TLS send endpoint has option {opts}')
+def step_tls_send_endpoint_opts(context, opts):
+    """e.g. 'flush=true' → produces tls[flush=true]:127.0.0.1:4000"""
+    context.tls_send_endpoint_opts = opts
+    if 'hash' in opts:
+        context.hash_enabled = True
+
+
+@given('TLS send uses an expired certificate')
+def step_tls_expired_cert(context):
+    context.tls_send_cert = str(context.pki_dir / 'expired.cert.pem')
+    context.tls_send_key  = str(context.pki_dir / 'expired.key.pem')
+
+
+@given('TLS send uses a certificate from a wrong CA')
+def step_tls_wrong_ca_cert(context):
+    context.tls_send_cert = str(context.pki_dir / 'wrong.cert.pem')
+    context.tls_send_key  = str(context.pki_dir / 'wrong.key.pem')
+
+
+@given('TLS send uses a non-existent certificate path')
+def step_tls_missing_cert(context):
+    context.tls_send_cert = '/nonexistent/path/server.cert.pem'
+
+
+@given('TLS send uses a non-existent key path')
+def step_tls_missing_key(context):
+    context.tls_send_key = '/nonexistent/path/server.key.pem'
+
+
+@given('TLS send uses a non-existent CA path')
+def step_tls_missing_ca(context):
+    context.tls_send_ca = '/nonexistent/path/ca.cert.pem'
+
+
+@given('TLS send uses a mismatched key and certificate')
+def step_tls_mismatched_key_cert(context):
+    context.tls_send_cert = str(context.pki_dir / 'server.cert.pem')
+    context.tls_send_key  = str(context.pki_dir / 'client.key.pem')
+
+
+@given('TLS send uses an invalid cipher string')
+def step_tls_invalid_ciphers(context):
+    context.tls_send_ciphers = 'NOT_A_VALID_CIPHER_SUITE'
+
+
+@when('send file {name} via TLS connection of size {size}')
+def step_file_send_tls(context, name, size):
+    """Send a file using TLS to lidi-send (CA verification, no client cert)."""
+    filename = os.path.join(context.send_dir, name)
+    create_file(context, filename, size)
+    start_lidi_file_send_tls(context, name, mtls=False)
+
+
+@when('send file {name} via mutual TLS connection of size {size}')
+def step_file_send_mtls(context, name, size):
+    """Send a file with full mutual TLS (client presents its certificate)."""
+    filename = os.path.join(context.send_dir, name)
+    create_file(context, filename, size)
+    start_lidi_file_send_tls(context, name, mtls=True)
+
+
+@then('the file {name} is not received within {seconds:d} seconds')
+def step_file_not_received(context, name, seconds):
+    """Assert the file does NOT appear in the receive directory within the timeout."""
+    import time as time_module
+    deadline = time_module.time() + seconds
+    target = os.path.join(context.receive_dir, name)
+    while time_module.time() < deadline:
+        if os.path.exists(target):
+            raise AssertionError(f'File {name} was unexpectedly received')
+        time_module.sleep(0.5)
+
+
+@then('a TLS 1.2 connection attempt to lidi-send on port {port:d} is rejected')
+def step_tls12_rejected(context, port):
+    """Verify that openssl s_client with TLS 1.2 is rejected."""
+    import subprocess
+    result = subprocess.run([
+        'openssl', 's_client', '-connect', f'127.0.0.1:{port}',
+        '-CAfile', str(context.pki_dir / 'ca.cert.pem'),
+        '-tls1_2',
+    ], input=b'', capture_output=True, timeout=5)
+    output = (result.stdout + result.stderr).decode('utf-8', errors='ignore')
+    assert any(kw in output.lower() for kw in ['alert', 'handshake failure', 'error', 'protocol']), \
+        f'Expected TLS 1.2 to be rejected, but output was:\n{output}'

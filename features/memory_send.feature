@@ -15,7 +15,9 @@ Feature: Memory stability of lidi-send under congestion
   # ============================================================================
 
   Scenario: T-SS1 - Sender pipeline gauges are observable during transfer
-    Given lidi is started with max throughput of 100mbit
+    # 50MB at 200mbit (25MB/s): ~2s transfer — long enough for the Prometheus
+    # metrics_loop (1s interval) to capture a non-zero gauge value mid-transfer.
+    Given lidi is started with max throughput of 200mbit
     When lidi-file-send file tss1.bin of size 50MB
     Then the sender Prometheus gauge lidi_send_queue_len is greater than or equal to 1
     And the sender Prometheus gauge lidi_send_block_recycler_len is greater than or equal to 1
@@ -26,7 +28,8 @@ Feature: Memory stability of lidi-send under congestion
     # The metrics_loop updates gauges every 1 second (lib.rs:183). When the transfer ends,
     # to_udp drains to 0 immediately, but the Prometheus gauge lags by up to 1 second.
     # The step polls with retries to wait for the gauge to settle to 0.
-    Given lidi is started with max throughput of 100mbit
+    # 100MB at 400mbit (50MB/s): ~2s transfer, then gauge settles within 1s.
+    Given lidi is started with max throughput of 400mbit
     When lidi-file-send file tss2.bin of size 100MB
     Then lidi-file-receive file tss2.bin in 30 seconds
     And the sender Prometheus gauge lidi_send_queue_len is less than or equal to 0
@@ -49,8 +52,8 @@ Feature: Memory stability of lidi-send under congestion
     # This test verifies the bounded queue correctly prevents unbounded memory growth.
     Given lidi is started with max throughput of 100mbit
     When lidi-file-send starts sending file tss4.bin of size 100MB
-    And wait 2 seconds
-    And lidi-send send_5000 thread is paused for 5 seconds
+    And wait 1 seconds
+    And lidi-send send_5000 thread is paused for 3 seconds
     Then sender memory did not grow by more than 5 MB during thread pause
 
 

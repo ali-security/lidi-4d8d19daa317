@@ -1,12 +1,35 @@
 # functions to be called before or after tests must be put here
 
-from tempfile import TemporaryDirectory
+import signal
 import subprocess
 import time
 import os
+from pathlib import Path
+import psutil
 
 from features.steps.lidi import stop_throttled_diode
 from features.steps.utils import kill_process_safe
+from features.steps.tls_pki import generate_pki
+
+_LIDI_PROCESS_NAMES = {
+    'lidi-send', 'lidi-receive', 'lidi-file-send', 'lidi-file-receive',
+    'lidi-dir-send', 'lidi-network-simulator',
+}
+
+def wait_for_processes_dead(max_wait=1.0):
+    """Return as soon as no lidi processes remain, up to max_wait seconds."""
+    deadline = time.monotonic() + max_wait
+    while time.monotonic() < deadline:
+        try:
+            if not any(p.info['name'] in _LIDI_PROCESS_NAMES
+                       for p in psutil.process_iter(['name'])):
+                return True
+        except psutil.Error:
+            pass
+        time.sleep(0.02)
+    os.system("pkill -9 -f lidi 2>/dev/null")
+    return False
+
 
 # function called before any feature or scenario
 def before_all(context):
@@ -65,8 +88,18 @@ def before_scenario(context, _feature):
     os.makedirs(context.receive_dir, exist_ok=True)
     os.makedirs(context.log_dir, exist_ok=True)
 
+    # Generate test PKI for TLS tests
+    context.pki_dir = Path(context.base_dir) / 'pki'
+    try:
+        generate_pki(context.pki_dir)
+    except Exception as e:
+        print(f"Warning: Failed to generate PKI: {e}")
+
     # files metadata
     context.files = {}
+
+    # concurrent processes for multi-client tests
+    context.concurrent_processes = []
 
     # process instances
     context.proc_lidi_receive = None
@@ -108,14 +141,50 @@ def before_scenario(context, _feature):
     context.log_config_network_behavior = None
 
     context.lidi_config_path = context.base_dir
-    
+
+    # file_receive scenario state
+    context._file_receive_suspended = False
+    context._receive_dir_was_readonly = False
+
     # setup logging configuration
     setup_log_config(context, context.log_dir)
 
 # function called after every test : cleanup (delete temp directories & kill processes)
 def after_scenario(context, _scenario):
+    # Resume a SIGSTOPped lidi-file-receive so SIGKILL is delivered cleanly.
+    # SIGKILL works on stopped processes too, but SIGCONT first avoids any edge cases.
+    proc_frc = getattr(context, 'proc_lidi_receive_file', None)
+    if proc_frc and proc_frc.poll() is None and context._file_receive_suspended:
+        try:
+            os.kill(proc_frc.pid, signal.SIGCONT)
+        except (ProcessLookupError, OSError):
+            pass
+
+    # Restore receive_dir permissions so shutil.rmtree can clean it up.
+    if context._receive_dir_was_readonly:
+        try:
+            os.chmod(context.receive_dir, 0o755)
+        except OSError:
+            pass
+
     stop_throttled_diode(context)
-    
+
+    # Kill concurrent processes from multi-client tests
+    if hasattr(context, 'concurrent_processes'):
+        for proc_info in context.concurrent_processes:
+            proc = proc_info.get('process')
+            if proc and proc.poll() is None:
+                try:
+                    proc.terminate()
+                    proc.wait(timeout=5)
+                except (subprocess.TimeoutExpired, ProcessLookupError):
+                    try:
+                        proc.kill()
+                        proc.wait(timeout=2)
+                    except (subprocess.TimeoutExpired, ProcessLookupError):
+                        pass
+        context.concurrent_processes.clear()
+
     # first kill processes
     kill_process_safe('proc_lidi_receive', 'lidi-receive', context)
     kill_process_safe('proc_lidi_send', 'lidi-send', context)
@@ -124,8 +193,8 @@ def after_scenario(context, _scenario):
     kill_process_safe('proc_network', 'lidi-network-simulator', context)
     kill_process_safe('proc_lidi_receive_file', 'lidi-file-receive', context)
 
-    # make sure everything is killed, even throttled_fs (fuse) which uses temp directories
-    time.sleep(1)
+    # Wait until all lidi processes are dead before starting the next scenario
+    wait_for_processes_dead()
 
     # Clear files metadata
     context.files.clear()

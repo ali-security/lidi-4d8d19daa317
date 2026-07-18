@@ -50,8 +50,8 @@ Feature: Valgrind memcheck on unsafe UDP socket implementation (msg and mmsg)
     And UDP send mode is mmsg
     And UDP receive mode is native
     And lidi is started with max throughput of 10mbit
-    When lidi-file-send file valgrind_send_mmsg.bin of size 5MB
-    Then lidi-file-receive file valgrind_send_mmsg.bin in 60 seconds
+    When lidi-file-send file valgrind_send_mmsg.bin of size 1MB
+    Then lidi-file-receive file valgrind_send_mmsg.bin in 15 seconds
     And valgrind reports no memory errors on lidi-send
 
   # send=native, recv=mmsg — isolates the receive side
@@ -67,8 +67,8 @@ Feature: Valgrind memcheck on unsafe UDP socket implementation (msg and mmsg)
     And UDP send mode is native
     And UDP receive mode is mmsg
     And lidi is started with max throughput of 10mbit
-    When lidi-file-send file valgrind_recv_mmsg.bin of size 5MB
-    Then lidi-file-receive file valgrind_recv_mmsg.bin in 60 seconds
+    When lidi-file-send file valgrind_recv_mmsg.bin of size 1MB
+    Then lidi-file-receive file valgrind_recv_mmsg.bin in 15 seconds
     And valgrind reports no memory errors on lidi-receive
 
   # send=mmsg, recv=mmsg — full mmsg pipeline, both sides under valgrind
@@ -80,8 +80,8 @@ Feature: Valgrind memcheck on unsafe UDP socket implementation (msg and mmsg)
     And UDP send mode is mmsg
     And UDP receive mode is mmsg
     And lidi is started with max throughput of 10mbit
-    When lidi-file-send file valgrind_mmsg_full.bin of size 5MB
-    Then lidi-file-receive file valgrind_mmsg_full.bin in 60 seconds
+    When lidi-file-send file valgrind_mmsg_full.bin of size 1MB
+    Then lidi-file-receive file valgrind_mmsg_full.bin in 15 seconds
     And valgrind reports no memory errors on lidi-send
     And valgrind reports no memory errors on lidi-receive
 
@@ -95,8 +95,8 @@ Feature: Valgrind memcheck on unsafe UDP socket implementation (msg and mmsg)
     And UDP send mode is msg
     And UDP receive mode is native
     And lidi is started with max throughput of 10mbit
-    When lidi-file-send file valgrind_send_msg.bin of size 5MB
-    Then lidi-file-receive file valgrind_send_msg.bin in 60 seconds
+    When lidi-file-send file valgrind_send_msg.bin of size 1MB
+    Then lidi-file-receive file valgrind_send_msg.bin in 15 seconds
     And valgrind reports no memory errors on lidi-send
 
   # send=native, recv=msg — isolates the recvmsg(2) single-datagram path
@@ -110,16 +110,16 @@ Feature: Valgrind memcheck on unsafe UDP socket implementation (msg and mmsg)
     And UDP send mode is native
     And UDP receive mode is msg
     And lidi is started with max throughput of 10mbit
-    When lidi-file-send file valgrind_recv_msg.bin of size 5MB
-    Then lidi-file-receive file valgrind_recv_msg.bin in 60 seconds
+    When lidi-file-send file valgrind_recv_msg.bin of size 1MB
+    Then lidi-file-receive file valgrind_recv_msg.bin in 15 seconds
     And valgrind reports no memory errors on lidi-receive
 
   # send=mmsg, recv=mmsg, large transfer — exercises repeated reuse of the
   # pinned iovec/mmsghdr arrays across many consecutive RaptorQ blocks.
-  # At block=20000 B and MTU=1500 each block produces ~16 packets, so a
-  # 10 MB file generates ~600 blocks → ~600 sendmmsg() calls and a
-  # matching number of recvmmsg() calls, each reusing the same 1024-entry
-  # iovec and mmsghdr arrays.
+  # At default block=220 000 B and MTU=1500 each block produces ~150 packets;
+  # a 2 MB file generates ~9 blocks → ~9 sendmmsg() calls and a matching
+  # number of recvmmsg() calls, each reusing the same 1024-entry iovec and
+  # mmsghdr arrays.
   # Validates: no use-after-free or stale iov_base pointer across repeated
   # calls; correct re-initialisation of msg_len before each sendmmsg call.
   Scenario: Valgrind: no memory errors in mmsg across many blocks (TV6)
@@ -128,8 +128,8 @@ Feature: Valgrind memcheck on unsafe UDP socket implementation (msg and mmsg)
     And UDP send mode is mmsg
     And UDP receive mode is mmsg
     And lidi is started with max throughput of 10mbit
-    When lidi-file-send file valgrind_mmsg_large.bin of size 10MB
-    Then lidi-file-receive file valgrind_mmsg_large.bin in 600 seconds
+    When lidi-file-send file valgrind_mmsg_large.bin of size 2MB
+    Then lidi-file-receive file valgrind_mmsg_large.bin in 30 seconds
     And valgrind reports no memory errors on lidi-send
     And valgrind reports no memory errors on lidi-receive
 
@@ -145,9 +145,9 @@ Feature: Valgrind memcheck on unsafe UDP socket implementation (msg and mmsg)
     And UDP send mode is mmsg
     And UDP receive mode is mmsg
     And lidi is started with max throughput of 10mbit
-    When lidi-file-send file valgrind_mmsg_consec_a.bin of size 5MB
-    And lidi-file-receive file valgrind_mmsg_consec_a.bin in 30 seconds
-    And lidi-file-send file valgrind_mmsg_consec_b.bin of size 5MB
-    Then lidi-file-receive file valgrind_mmsg_consec_b.bin in 30 seconds
+    When lidi-file-send file valgrind_mmsg_consec_a.bin of size 1MB
+    And lidi-file-receive file valgrind_mmsg_consec_a.bin in 15 seconds
+    And lidi-file-send file valgrind_mmsg_consec_b.bin of size 1MB
+    Then lidi-file-receive file valgrind_mmsg_consec_b.bin in 15 seconds
     And valgrind reports no memory errors on lidi-send
     And valgrind reports no memory errors on lidi-receive

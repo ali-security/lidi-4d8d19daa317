@@ -54,6 +54,20 @@ where
         #[allow(clippy::cast_precision_loss)]
         gauge_queue.set(recvq.len() as f64);
 
+        let block_type = block.block_type()?;
+
+        // Abort bypasses sequence reordering: it is an out-of-band terminator
+        // that must reach client::start immediately regardless of what sequence
+        // number it carries.  Dispatch assigns seq=0 to sync-loss Aborts (it has
+        // no per-client sequence counter), so waiting for in-order delivery would
+        // stall the worker for the full abort_timeout before the TCP connection is
+        // finally closed and the partial file cleaned up.
+        if matches!(block_type, protocol::BlockType::Abort) {
+            log::warn!("client {client_id:x}: aborting transfer");
+            to_client.send(block)?;
+            break;
+        }
+
         let sequence_number = block.sequence_number();
 
         log::trace!("client {client_id:x}: receiving block with sequence number {sequence_number}");
@@ -81,27 +95,18 @@ where
 
         log::trace!("client {client_id:x}: payload {} bytes", payload.len());
 
-        let block_type = block.block_type()?;
-
         to_client.send(block)?;
 
-        if matches!(
-            block_type,
-            protocol::BlockType::Abort | protocol::BlockType::End
-        ) {
+        if matches!(block_type, protocol::BlockType::End) {
             #[cfg(feature = "hash")]
             if let Some(hasher) = hasher {
                 let hash = hasher.finalize();
                 log::info!("client {client_id:x}: hash is {hash:x}");
             }
 
-            if matches!(block_type, protocol::BlockType::Abort) {
-                log::warn!("client {client_id:x}: aborting transfer");
-            } else {
-                log::info!(
-                    "client {client_id:x}: finished transfer, {transmitted} bytes transmitted"
-                );
-            }
+            log::info!(
+                "client {client_id:x}: finished transfer, {transmitted} bytes transmitted"
+            );
 
             break;
         }

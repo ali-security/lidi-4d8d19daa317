@@ -58,6 +58,11 @@ version = "0"
 default-features = false
 features = [ "termcolor", "local-offset" ]
 
+[dependencies.tempfile]
+version = "3"
+optional = true
+default-features = false
+
 [dependencies.twox-hash]
 version = "2"
 optional = true
@@ -65,10 +70,11 @@ default-features = false
 features = [ "std", "xxhash3_128" ]
 
 [features]
-default = [ "hash", "inotify", "log4rs", "tcp", "tls", "unix" ]
+default = [ "hash", "inotify", "log4rs", "tcp", "tls", "tmp-file", "unix" ]
 hash = [ "dep:twox-hash" ]
 inotify = [ "dep:inotify" ]
 log4rs = [ "dep:log4rs" ]
 tcp = [ ]
 tls = [ "dep:openssl" ]
+tmp-file = [ "dep:tempfile" ]
 unix = [ ]

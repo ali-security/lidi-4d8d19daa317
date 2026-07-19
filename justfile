@@ -1,5 +1,5 @@
 release:
-    cargo build --release
+    cargo build --release --features mimalloc
 
 release_tcp_mmsg:
     cargo build --release --no-default-features --features from-tcp,to-tcp,tcp,receive-mmsg,send-mmsg,tcp

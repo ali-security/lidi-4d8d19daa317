@@ -14,7 +14,7 @@ env:
 jobs:
   build-linux:
     name: Build for Linux
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
 
     steps:
       - uses: actions/checkout@v6
@@ -52,7 +52,7 @@ jobs:
 
   package:
     name: Package artifacts
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     needs: [ build-linux ]
     steps:
       - uses: actions/checkout@v6

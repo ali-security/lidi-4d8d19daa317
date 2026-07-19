@@ -21,6 +21,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt update
+          sudo apt full-upgrade
           sudo apt install just
 
       - name: Update rust
@@ -42,6 +43,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt update
+          sudo apt full-upgrade
           sudo apt install python3-pip python3-virtualenv just valgrind
 
       - name: Update rust

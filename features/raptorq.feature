@@ -23,7 +23,7 @@ Feature: RaptorQ parameter validation: log, packet capture, and end-to-end trans
   Repair percentage variations show the effect on packet count.
 
   Encoding formulas (lidi-protocol/src/lib.rs):
-    max_packet_size = floor((mtu - 32) / 8) * 8
+    max_packet_size = floor((mtu - 28 - 4 - 2) / 8) * 8
     symbol_count    = block_size // max_packet_size
     transfer_length = max_packet_size * symbol_count
     min_packets     = symbol_count + 2
@@ -55,17 +55,17 @@ Feature: RaptorQ parameter validation: log, packet capture, and end-to-end trans
 
     Examples: MTU variations (block=220000, repair=25%)
       | mtu  | block_size | repair | transfer_length | min_packets | extra_repair | data_bytes | total_packets | udp_payload |
-      | 1280 | 220000     | 25     | 219648          | 178         | 60           | 219636     | 476           | 1252        |
-      | 1500 | 220000     | 25     | 219600          | 152         | 51           | 219588     | 406           | 1468        |
-      | 9000 | 220000     | 25     | 215232          | 26          | 9            | 215220     | 70            | 8972        |
+      | 1280 | 220000     | 25     | 219480          | 179         | 60           | 219636     | 717           | 1246        |
+      | 1500 | 220000     | 25     | 219600          | 152         | 51           | 219588     | 406           | 1470        |
+      | 9000 | 220000     | 25     | 215040          | 26          | 9            | 215220     | 105           | 8966        |
 
     Examples: Block size variations (mtu=1500, repair=25%)
       | mtu  | block_size | repair | transfer_length | min_packets | extra_repair | data_bytes | total_packets | udp_payload |
-      | 1500 | 50000      | 25     | 49776           | 36          | 12           | 49764      | 96            | 1468        |
-      | 1500 | 440000     | 25     | 439200          | 302         | 101          | 439188     | 806           | 1468        |
+      | 1500 | 50000      | 25     | 49776           | 36          | 12           | 49764      | 96            | 1470        |
+      | 1500 | 440000     | 25     | 439200          | 302         | 101          | 439188     | 806           | 1470        |
 
     Examples: Repair percentage variations (mtu=1500, block=220000)
       | mtu  | block_size | repair | transfer_length | min_packets | extra_repair | data_bytes | total_packets | udp_payload |
-      | 1500 | 220000     | 0      | 219600          | 152         | 0            | 219588     | 304           | 1468        |
-      | 1500 | 220000     | 10     | 219600          | 152         | 17           | 219588     | 338           | 1468        |
-      | 1500 | 220000     | 50     | 219600          | 152         | 152          | 219588     | 608           | 1468        |
+      | 1500 | 220000     | 0      | 219600          | 152         | 0            | 219588     | 304           | 1470        |
+      | 1500 | 220000     | 10     | 219600          | 152         | 17           | 219588     | 338           | 1470        |
+      | 1500 | 220000     | 50     | 219600          | 152         | 152          | 219588     | 608           | 1470        |

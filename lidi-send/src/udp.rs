@@ -1,8 +1,9 @@
 //! Worker that encodes protocol blocks into `RaptorQ` packets
 
 use crate::socket;
+use lidi_protocol as protocol;
 use std::{
-    io,
+    io, iter,
     net::{self, ToSocketAddrs},
 };
 
@@ -62,20 +63,42 @@ pub fn start<C>(
 
     let mut udp = socket::Send::new(socket, address, sender.config.mode)?;
 
+    let mut datagrams =
+        vec![vec![0u8; sender.config.mtu as usize]; sender.raptorq.nb_packets() as usize];
+
     loop {
         let Some(packets) = for_udp.recv()? else {
             return Ok(());
         };
 
-        log::debug!("sending {} packets", packets.len());
+        let nb_packets = packets.len();
 
-        if let Err(e) = udp.send(&packets) {
+        log::debug!("sending {nb_packets} packets");
+
+        let session_id_len = size_of::<protocol::SessionId>();
+
+        let to_send = iter::zip(
+            packets.iter().map(raptorq::EncodingPacket::serialize),
+            datagrams[0..nb_packets].iter_mut(),
+        )
+        .map(|(packet, datagram)| {
+            datagram[0..session_id_len].copy_from_slice(&sender.session_id.to_le_bytes());
+
+            let packet_len = packet.len();
+
+            datagram[session_id_len..session_id_len + packet_len].copy_from_slice(&packet);
+
+            &mut datagram[0..session_id_len + packet_len]
+        })
+        .collect();
+
+        if let Err(e) = udp.send(to_send) {
             log::error!("failed to send UDP packet: {e}");
             #[cfg(feature = "prometheus")]
-            metrics::counter!("lidi_error_udp_packets").increment(packets.len() as u64);
+            metrics::counter!("lidi_error_udp_packets").increment(nb_packets as u64);
         } else {
             #[cfg(feature = "prometheus")]
-            metrics::counter!("lidi_send_udp_packets").increment(packets.len() as u64);
+            metrics::counter!("lidi_send_udp_packets").increment(nb_packets as u64);
         }
     }
 }

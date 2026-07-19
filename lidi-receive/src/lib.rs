@@ -82,15 +82,15 @@ impl From<io::Error> for Error {
 }
 
 #[cfg(not(feature = "receive-mmsg"))]
-impl From<crossbeam_channel::SendError<raptorq::EncodingPacket>> for Error {
-    fn from(_: crossbeam_channel::SendError<raptorq::EncodingPacket>) -> Self {
+impl From<crossbeam_channel::SendError<Option<raptorq::EncodingPacket>>> for Error {
+    fn from(_: crossbeam_channel::SendError<Option<raptorq::EncodingPacket>>) -> Self {
         Self::SendPackets
     }
 }
 
 #[cfg(feature = "receive-mmsg")]
-impl From<crossbeam_channel::SendError<Vec<raptorq::EncodingPacket>>> for Error {
-    fn from(_: crossbeam_channel::SendError<Vec<raptorq::EncodingPacket>>) -> Self {
+impl From<crossbeam_channel::SendError<Option<Vec<raptorq::EncodingPacket>>>> for Error {
+    fn from(_: crossbeam_channel::SendError<Option<Vec<raptorq::EncodingPacket>>>) -> Self {
         Self::SendPackets
     }
 }
@@ -230,6 +230,7 @@ where
     Lifecycle: ClientLifecycle,
 {
     config: Config,
+    session_id: protocol::SessionIdAtomic,
     raptorq: protocol::RaptorQ,
     to_dispatch: crossbeam_channel::Sender<Option<protocol::Block>>,
     for_dispatch: crossbeam_channel::Receiver<Option<protocol::Block>>,
@@ -245,12 +246,13 @@ where
     )>,
     active_transfers:
         dashmap::DashMap<protocol::ClientId, crossbeam_channel::Sender<protocol::Block>>,
-    #[cfg(all(feature = "prometheus", not(feature = "receive-mmsg")))]
-    reblock_queues: std::sync::RwLock<Vec<crossbeam_channel::Receiver<raptorq::EncodingPacket>>>,
     failed_transfers: dashmap::DashSet<protocol::ClientId>,
+    #[cfg(all(feature = "prometheus", not(feature = "receive-mmsg")))]
+    reblock_queues:
+        std::sync::RwLock<Vec<crossbeam_channel::Receiver<Option<raptorq::EncodingPacket>>>>,
     #[cfg(all(feature = "prometheus", feature = "receive-mmsg"))]
     reblock_queues:
-        std::sync::RwLock<Vec<crossbeam_channel::Receiver<Vec<raptorq::EncodingPacket>>>>,
+        std::sync::RwLock<Vec<crossbeam_channel::Receiver<Option<Vec<raptorq::EncodingPacket>>>>>,
     client_lifecycle: Lifecycle,
 }
 
@@ -325,6 +327,8 @@ where
     ) -> Result<Self, Error> {
         let config = Config::from(config);
 
+        let session_id = protocol::SessionIdAtomic::new(0);
+
         let (to_dispatch, for_dispatch) = match config.dispatch_queue_size {
             0 => crossbeam_channel::unbounded(),
             n => crossbeam_channel::bounded(n),
@@ -336,6 +340,7 @@ where
 
         Ok(Self {
             config,
+            session_id,
             raptorq,
             to_dispatch,
             for_dispatch,

@@ -25,6 +25,7 @@ use lidi_command_utils::config;
 #[cfg(feature = "from-tls")]
 use lidi_command_utils::tls;
 use lidi_protocol as protocol;
+use rand::TryRng;
 #[cfg(any(feature = "heartbeat", feature = "prometheus"))]
 use std::time;
 use std::{
@@ -172,6 +173,7 @@ impl From<&config::SendConfig> for Config {
 /// diode.
 pub struct Sender<C> {
     config: Config,
+    session_id: protocol::SessionId,
     raptorq: protocol::RaptorQ,
     block_recycler: crossbeam_deque::Injector<protocol::Block>,
     to_server:
@@ -206,6 +208,12 @@ where
             return Err(Error::Internal(String::from("no ports configured")));
         }
 
+        let mut rng = rand::rngs::SysRng;
+        let mut session_id = [0u8; size_of::<protocol::SessionId>()];
+        rng.try_fill_bytes(&mut session_id)
+            .map_err(|e| Error::Internal(e.to_string()))?;
+        let session_id = protocol::SessionId::from_le_bytes(session_id);
+
         let block_recycler = crossbeam_deque::Injector::new();
 
         let (to_server, for_server) = crossbeam_channel::bounded(1);
@@ -213,6 +221,7 @@ where
 
         Ok(Self {
             config,
+            session_id,
             raptorq,
             block_recycler,
             to_server,
@@ -237,6 +246,8 @@ where
         );
 
         log::info!("send mode is {}", self.config.mode);
+
+        log::info!("session id is {:x}", self.session_id);
 
         for port in &self.config.ports {
             let (to_udp, for_udp) = crossbeam_channel::bounded(2);

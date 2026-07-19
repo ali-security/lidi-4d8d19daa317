@@ -32,7 +32,7 @@
 //! caller. Also no data payload should be provided by the constructor caller in case the block
 //! is of type `Heartbeat`, `Abort` or `End`. For `Start`, it contains only the encoded `EndpointId`.
 
-use std::{fmt, io};
+use std::{fmt, io, sync};
 
 pub enum Error {
     DataTooLarge(String),
@@ -64,6 +64,19 @@ impl From<io::Error> for Error {
     }
 }
 
+pub type SessionId = u16;
+pub type SessionIdAtomic = sync::atomic::AtomicU16;
+
+#[must_use]
+pub fn session_split(data: &[u8]) -> (SessionId, &[u8]) {
+    let mut session_id = [0u8; size_of::<SessionId>()];
+    session_id.copy_from_slice(&data[0..size_of::<SessionId>()]);
+    (
+        SessionId::from_le_bytes(session_id),
+        &data[size_of::<SessionId>()..],
+    )
+}
+
 pub const MIN_NB_REPAIR_PACKETS: u32 = 2;
 
 const PACKET_HEADER_SIZE: u16 = 20 + 8;
@@ -90,7 +103,9 @@ impl RaptorQ {
             return Err(Error::InvalidRepairPercentage(repair_percentage));
         }
 
-        let mut max_packet_size = mtu - PACKET_HEADER_SIZE - RAPTORQ_HEADER_SIZE;
+        #[allow(clippy::cast_possible_truncation)]
+        let mut max_packet_size =
+            mtu - PACKET_HEADER_SIZE - RAPTORQ_HEADER_SIZE - size_of::<SessionId>() as u16;
         max_packet_size -= max_packet_size % RAPTORQ_ALIGNMENT;
 
         let symbol_count = u16::try_from(block_size / u32::from(max_packet_size))

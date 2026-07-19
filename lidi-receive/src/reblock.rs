@@ -12,7 +12,7 @@ struct Block {
     packets: Vec<raptorq::EncodingPacket>,
 }
 
-fn send_to_decode<Lifecycle>(
+fn send_to_dispatch<Lifecycle>(
     receiver: &crate::Receiver<Lifecycle>,
     id: u8,
     blocks: &mut [Block],
@@ -40,14 +40,16 @@ where
         None => {
             #[cfg(feature = "prometheus")]
             metrics::counter!("lidi_receive_blocks_decode_failed").increment(1);
+
             log::error!("lost block {id} (failed to decode with {nb_packets} packets)");
+
             receiver.to_dispatch.send(None)?;
         }
         Some(block) => {
-            log::trace!("block {id} decoded ({} bytes)", block.len());
-
             #[cfg(feature = "prometheus")]
             metrics::counter!("lidi_receive_blocks_decoded").increment(1);
+
+            log::trace!("block {id} decoded ({} bytes)", block.len());
 
             receiver
                 .to_dispatch
@@ -81,10 +83,10 @@ where
 pub fn start<Lifecycle>(
     receiver: &crate::Receiver<Lifecycle>,
     #[cfg(not(feature = "receive-mmsg"))] for_reblock: &crossbeam_channel::Receiver<
-        raptorq::EncodingPacket,
+        Option<raptorq::EncodingPacket>,
     >,
     #[cfg(feature = "receive-mmsg")] for_reblock: &crossbeam_channel::Receiver<
-        Vec<raptorq::EncodingPacket>,
+        Option<Vec<raptorq::EncodingPacket>>,
     >,
 ) -> Result<(), crate::Error>
 where
@@ -121,7 +123,7 @@ where
                                 #[cfg(feature = "prometheus")]
                                 metrics::counter!("lidi_receive_blocks_lost").increment(1);
                             }
-                            let _ = send_to_decode(receiver, cur_id, &mut blocks)?;
+                            let _ = send_to_dispatch(receiver, cur_id, &mut blocks)?;
                         }
                         cur_id = cur_id.wrapping_add(1);
                     }
@@ -130,7 +132,13 @@ where
                 continue;
             }
             Err(e) => return Err(crate::Error::from(e)),
-            Ok(packets) => {
+            Ok(None) => {
+                reset = true;
+                log::info!("new session detected, aborting existing connections");
+                receiver.to_dispatch.send(None)?;
+                continue;
+            }
+            Ok(Some(packets)) => {
                 #[cfg(not(feature = "receive-mmsg"))]
                 {
                     [packets]
@@ -182,12 +190,12 @@ where
 
         if fast_track {
             log::warn!("probable network interrupt, fast track first block");
-            let _ = send_to_decode(receiver, cur_id, &mut blocks)?;
+            let _ = send_to_dispatch(receiver, cur_id, &mut blocks)?;
             cur_id = cur_id.wrapping_add(1);
         }
 
         while blocks[cur_id as usize].packets.len() >= min_nb_packets {
-            reset = send_to_decode(receiver, cur_id, &mut blocks)?;
+            reset = send_to_dispatch(receiver, cur_id, &mut blocks)?;
             cur_id = cur_id.wrapping_add(1);
         }
     }

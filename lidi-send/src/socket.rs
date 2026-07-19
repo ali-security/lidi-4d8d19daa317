@@ -135,16 +135,14 @@ impl Send {
         }
     }
 
-    pub fn send(&mut self, packets: &[raptorq::EncodingPacket]) -> Result<(), io::Error> {
-        let datagrams = packets.iter().map(raptorq::EncodingPacket::serialize);
-
+    pub fn send(&mut self, mut datagrams: Vec<&mut [u8]>) -> Result<(), io::Error> {
         match self {
             #[cfg(feature = "send-native")]
             Self::Native { socket, dest } => {
                 for datagram in datagrams {
                     let len = datagram.len();
 
-                    let sent = socket.send_to(&datagram, *dest)?;
+                    let sent = socket.send_to(datagram, *dest)?;
 
                     if sent != len {
                         return Err(io::Error::other(format!(
@@ -160,7 +158,7 @@ impl Send {
                 iovec,
                 ..
             } => {
-                for mut datagram in datagrams {
+                for datagram in datagrams {
                     let len = datagram.len();
 
                     iovec.iov_base = datagram.as_mut_ptr().cast();
@@ -182,10 +180,7 @@ impl Send {
                 iovecs,
                 ..
             } => {
-                for datagrams in datagrams
-                    .collect::<Vec<_>>()
-                    .chunks_mut(socket::MAX_MMSG_BATCH_SIZE as usize)
-                {
+                for datagrams in datagrams.chunks_mut(socket::MAX_MMSG_BATCH_SIZE as usize) {
                     let to_send = datagrams.len();
 
                     for (i, datagram) in datagrams.iter_mut().enumerate() {

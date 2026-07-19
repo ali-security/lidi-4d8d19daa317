@@ -1,19 +1,21 @@
 //! Worker that actually receives packets from the UDP diode link
 
 use crate::{ClientLifecycle, socket};
+use lidi_protocol as protocol;
 use std::{
     io,
     net::{self, ToSocketAddrs},
+    sync,
 };
 
 pub fn start<Lifecycle>(
     receiver: &crate::Receiver<Lifecycle>,
     port: u16,
     #[cfg(not(feature = "receive-mmsg"))] to_reblock: &crossbeam_channel::Sender<
-        raptorq::EncodingPacket,
+        Option<raptorq::EncodingPacket>,
     >,
     #[cfg(feature = "receive-mmsg")] to_reblock: &crossbeam_channel::Sender<
-        Vec<raptorq::EncodingPacket>,
+        Option<Vec<raptorq::EncodingPacket>>,
     >,
 ) -> Result<(), crate::Error>
 where
@@ -75,25 +77,60 @@ where
             socket::ReceiveDatagrams::Single(datagram) => {
                 #[cfg(feature = "prometheus")]
                 metrics::counter!("lidi_receive_udp_packets").increment(1);
-                let packet = raptorq::EncodingPacket::deserialize(datagram);
+
+                let (session_id, packet) = protocol::session_split(datagram);
+
+                let prev_session_id = receiver
+                    .session_id
+                    .swap(session_id, sync::atomic::Ordering::SeqCst);
+
+                if prev_session_id == 0 {
+                    log::info!("session id is {session_id:x}");
+                } else if prev_session_id != session_id {
+                    log::info!("new session id is {session_id:x}");
+                    to_reblock.send(None)?;
+                }
+
                 #[cfg(not(feature = "receive-mmsg"))]
-                to_reblock.send(packet)?;
+                to_reblock.send(Some(packet))?;
                 #[cfg(feature = "receive-mmsg")]
-                to_reblock.send(vec![packet])?;
+                to_reblock.send(Some(vec![raptorq::EncodingPacket::deserialize(packet)]))?;
             }
             #[cfg(feature = "receive-mmsg")]
             socket::ReceiveDatagrams::Multiple(datagrams) => {
                 #[cfg(feature = "prometheus")]
                 metrics::counter!("lidi_receive_udp_packets").increment(datagrams.len() as u64);
+
+                // assume all datagrams are from the same session
+                let session_id = protocol::session_split(datagrams[0]).0;
+
+                let prev_session_id = receiver
+                    .session_id
+                    .swap(session_id, sync::atomic::Ordering::SeqCst);
+
+                if prev_session_id == 0 {
+                    log::info!("session id is {session_id:x}");
+                } else if prev_session_id != session_id {
+                    log::info!("new session id is {session_id:x}");
+                    to_reblock.send(None)?;
+                }
+
                 let packets: Vec<_> = datagrams
                     .into_iter()
-                    .map(raptorq::EncodingPacket::deserialize)
+                    .filter_map(|datagram| {
+                        let (datagram_session_id, datagram) = protocol::session_split(datagram);
+                        if datagram_session_id == session_id {
+                            Some(raptorq::EncodingPacket::deserialize(datagram))
+                        } else {
+                            None
+                        }
+                    })
                     .collect();
                 log::trace!(
                     "UDP recv: sending {} packets to reblock queue",
                     packets.len()
                 );
-                to_reblock.send(packets)?;
+                to_reblock.send(Some(packets))?;
             }
         }
     }

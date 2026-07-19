@@ -10,7 +10,7 @@ pub fn start<C>(
     endpoint_options: config::EndpointOptions,
     client_id: protocol::ClientId,
     mut client: C,
-) -> Result<(), (protocol::SequenceNumber, crate::Error)>
+) -> Result<(), crate::Error>
 where
     C: io::Read + AsRawFd + Send,
 {
@@ -18,20 +18,14 @@ where
 
     let mut sequence_number = 0;
 
-    sender
-        .to_encode
-        .send(Some(
-            protocol::Block::new(
-                sender.block_recycler.steal().success(),
-                protocol::BlockType::Start,
-                &sender.raptorq,
-                client_id,
-                sequence_number,
-                Some(&endpoint_id.serialize()),
-            )
-            .map_err(|e| (sequence_number, e.into()))?,
-        ))
-        .map_err(|e| (sequence_number, e.into()))?;
+    sender.to_encode.send(Some(protocol::Block::new(
+        sender.block_recycler.steal().success(),
+        protocol::BlockType::Start,
+        &sender.raptorq,
+        client_id,
+        sequence_number,
+        Some(&endpoint_id.serialize()),
+    )?))?;
 
     sequence_number = sequence_number.wrapping_add(1);
 
@@ -49,9 +43,7 @@ where
     loop {
         log::trace!("client {client_id:x}: read...");
 
-        let read = client
-            .read(&mut buffer[cursor..])
-            .map_err(|e| (sequence_number, e.into()))?;
+        let read = client.read(&mut buffer[cursor..])?;
 
         if 0 < read {
             log::trace!("client {client_id:x}: {read} bytes read");
@@ -75,20 +67,14 @@ where
             hasher.update(&buffer[..cursor]);
         }
 
-        sender
-            .to_encode
-            .send(Some(
-                protocol::Block::new(
-                    sender.block_recycler.steal().success(),
-                    block_type,
-                    &sender.raptorq,
-                    client_id,
-                    sequence_number,
-                    Some(&buffer[..cursor]),
-                )
-                .map_err(|e| (sequence_number, e.into()))?,
-            ))
-            .map_err(|e| (sequence_number, e.into()))?;
+        sender.to_encode.send(Some(protocol::Block::new(
+            sender.block_recycler.steal().success(),
+            block_type,
+            &sender.raptorq,
+            client_id,
+            sequence_number,
+            Some(&buffer[..cursor]),
+        )?))?;
 
         sequence_number = sequence_number.wrapping_add(1);
 

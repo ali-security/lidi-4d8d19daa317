@@ -62,6 +62,12 @@ version = "0"
 default-features = false
 features = [ "local-offset", "termcolor" ]
 
+[dependencies.tcmalloc]
+version = "0"
+optional = true
+default-features = false
+features = [ ]
+
 [dependencies.toml]
 version = "1"
 default-features = false
@@ -81,4 +87,5 @@ jemalloc = [ "dep:tikv-jemallocator" ]
 log4rs = [ "dep:log4rs" ]
 mimalloc = [ "dep:mimalloc" ]
 prometheus = [ "dep:metrics-exporter-prometheus" ]
+tcmalloc = [ "dep:tcmalloc" ]
 tls = [ "dep:openssl" ]

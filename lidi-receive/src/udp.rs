@@ -91,10 +91,12 @@ where
                     to_reblock.send(None)?;
                 }
 
+                let packet = raptorq::EncodingPacket::deserialize(packet);
+
                 #[cfg(not(feature = "receive-mmsg"))]
                 to_reblock.send(Some(packet))?;
                 #[cfg(feature = "receive-mmsg")]
-                to_reblock.send(Some(vec![raptorq::EncodingPacket::deserialize(packet)]))?;
+                to_reblock.send(Some(vec![packet]))?;
             }
             #[cfg(feature = "receive-mmsg")]
             socket::ReceiveDatagrams::Multiple(datagrams) => {

@@ -135,7 +135,7 @@ impl Send {
         }
     }
 
-    pub fn send(&mut self, mut datagrams: Vec<&mut [u8]>) -> Result<(), io::Error> {
+    pub fn send(&mut self, datagrams: &mut [&mut [u8]]) -> Result<(), io::Error> {
         match self {
             #[cfg(feature = "send-native")]
             Self::Native { socket, dest } => {

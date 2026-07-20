@@ -77,7 +77,7 @@ pub fn start<C>(
 
         let session_id_len = size_of::<protocol::SessionId>();
 
-        let to_send = iter::zip(
+        let mut to_send = iter::zip(
             packets.iter().map(raptorq::EncodingPacket::serialize),
             datagrams[0..nb_packets].iter_mut(),
         )
@@ -90,9 +90,9 @@ pub fn start<C>(
 
             &mut datagram[0..session_id_len + packet_len]
         })
-        .collect();
+        .collect::<Vec<_>>();
 
-        if let Err(e) = udp.send(to_send) {
+        if let Err(e) = udp.send(&mut to_send) {
             log::error!("failed to send UDP packet: {e}");
             #[cfg(feature = "prometheus")]
             metrics::counter!("lidi_error_udp_packets").increment(nb_packets as u64);

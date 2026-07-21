@@ -9,38 +9,14 @@ pub mod socket;
 #[cfg(feature = "tls")]
 pub mod tls;
 
-#[cfg(all(
-    not(feature = "jemalloc"),
-    not(feature = "mimalloc"),
-    not(feature = "tcmalloc")
-))]
+#[cfg(not(feature = "mimalloc"))]
 pub const ALLOCATOR_NAME: &str = "default allocator";
 
-#[cfg(feature = "tcmalloc")]
-#[global_allocator]
-static GLOBAL_ALLOCATOR: tcmalloc::TCMalloc = tcmalloc::TCMalloc;
-#[cfg(feature = "tcmalloc")]
-pub const ALLOCATOR_NAME: &str = "tcmalloc";
-
-#[cfg(all(not(feature = "tcmalloc"), feature = "mimalloc"))]
+#[cfg(feature = "mimalloc")]
 #[global_allocator]
 static GLOBAL_ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
-#[cfg(all(not(feature = "tcmalloc"), feature = "mimalloc"))]
+#[cfg(feature = "mimalloc")]
 pub const ALLOCATOR_NAME: &str = "mimalloc";
-
-#[cfg(all(
-    not(feature = "tcmalloc"),
-    not(feature = "mimalloc"),
-    feature = "jemalloc"
-))]
-#[global_allocator]
-static GLOBAL_ALLOCATOR: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
-#[cfg(all(
-    not(feature = "tcmalloc"),
-    not(feature = "mimalloc"),
-    feature = "jemalloc"
-))]
-pub const ALLOCATOR_NAME: &str = "jemalloc";
 
 pub enum Error {
     Arguments(String),

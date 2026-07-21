@@ -13,12 +13,6 @@ optional = true
 default-features = false
 features = [ "color", "derive", "std", "usage", "suggestions" ]
 
-[dependencies.tikv-jemallocator]
-version = "0"
-optional = true
-default-features = false
-features = [ "background_threads_runtime_support" ]
-
 [dependencies.libc]
 version = "0"
 default-features = false
@@ -62,12 +56,6 @@ version = "0"
 default-features = false
 features = [ "local-offset", "termcolor" ]
 
-[dependencies.tcmalloc]
-version = "0"
-optional = true
-default-features = false
-features = [ ]
-
 [dependencies.toml]
 version = "1"
 default-features = false
@@ -83,9 +71,7 @@ features = [ "std", "xxhash3_128" ]
 default = [ ]
 command-line = [ "dep:clap" ]
 hash = [ "dep:twox-hash" ]
-jemalloc = [ "dep:tikv-jemallocator" ]
 log4rs = [ "dep:log4rs" ]
 mimalloc = [ "dep:mimalloc" ]
 prometheus = [ "dep:metrics-exporter-prometheus" ]
-tcmalloc = [ "dep:tcmalloc" ]
 tls = [ "dep:openssl" ]

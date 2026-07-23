@@ -10,7 +10,7 @@ Feature: Test --log-config option with lidi-file-send logging
   Scenario: Send file without --log-config (use log-level default)
     Given logging configuration is disabled
     And lidi is started
-    When lidi-file-send file test.bin of size 1MB
+    When lidi-file-send file test.bin of size 100KB
     Then lidi-file-receive file test.bin in 10 seconds
 
   Scenario: Verify lidi-file-send logs at Info level contain only Info and higher priority

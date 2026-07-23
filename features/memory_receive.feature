@@ -152,22 +152,15 @@ Scenario: T-SR10 - to_dispatch grows unbounded when dispatch thread is slow
     Then receiver memory did not grow by more than 10 MB during thread pause
 
   Scenario: T-SR11 - to_clients/client_sendq grows unbounded when client worker is slow
-    # Issues 4+5: client_queue_size=0 makes client_sendq unbounded (dispatch.rs:108).
-    # When reorder_0 is starved it cannot drain client_recvq; blocks accumulate
-    # without limit and lidi-receive RSS grows uncontrollably.
-    # TDD test: demonstrates the bug by verifying memory DOES grow >5 MB.
-    # Fix: set client_queue_size > 0 (see T-SR11b).
-    Given lidi is started with max throughput of 400mbit
+    Given max_clients is configured to 1
+    And lidi is started with max throughput of 400mbit
     When lidi-file-send starts sending file tsr11.bin of size 100MB
     And lidi-receive reorder_0 thread is paused until memory grows by 10 MB or 3 seconds
     Then receiver memory grew by more than 10 MB during thread pause
 
   Scenario: T-SR11b - client_queue_size=4 bounds memory when client worker is slow
-    # Fix verified: client_queue_size=4 caps each client_sendq at 4 decoded blocks (≈ 880 KB).
-    # When reorder_0 is starved, try_send fails once the queue is full; blocks are dropped.
-    # The upstream pipeline (reblock→dispatch) runs normally; no cascade backpressure.
-    # Only the per-client sendq grows, bounded at 4 × block_size ≈ 880 KB.
     Given lidi is started with max throughput of 400mbit
+    And max_clients is configured to 1
     And reblock_queue_size is configured to 128
     And dispatch_queue_size is configured to 128
     And clients_queue_size is configured to 128

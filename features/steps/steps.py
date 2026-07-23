@@ -237,11 +237,6 @@ def step_set_encoding(context, encoding):
 def step_set_encoding(context, repair):
     context.repair = repair
 
-@given('lidi is started with max clients set to {max_clients:d}')
-def step_set_max_clients(context, max_clients):
-    """Set the maximum number of concurrent clients."""
-    context.max_clients = max_clients
-
 @when('lidi-file-send file {name} of size {size} with hash')
 def step_send_file_with_hash(context, name, size):
     """Send a file with hash verification enabled."""
@@ -1266,6 +1261,19 @@ def step_configure_abort_timeout(context, duration_s):
 def step_disable_abort_timeout(context):
     """Disable abort_timeout (set to 0 or None)."""
     context.abort_timeout = 0
+
+
+@given('max_clients is configured to {n:d}')
+def step_configure_max_clients(context, n):
+    """Configure the number of parallel client worker slots.
+
+    Each slot spawns a reorder_<slot_index> thread once it picks up a
+    connection from the shared for_clients channel; with max_clients > 1,
+    which slot handles a given client is a race with no deterministic
+    winner. Tests that target a specific reorder_<N> thread name must pin
+    max_clients=1 to make that assignment deterministic.
+    """
+    context.max_clients = n
 
 
 @given('client_queue_size is configured to {size}')

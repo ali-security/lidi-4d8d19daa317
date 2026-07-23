@@ -17,6 +17,7 @@ fn send_to_dispatch<Lifecycle>(
     session_id: protocol::SessionId,
     id: u8,
     blocks: &mut [Block],
+    packet_vec_pool: &mut Vec<Vec<raptorq::EncodingPacket>>,
 ) -> Result<bool, crate::Error>
 where
     Lifecycle: ClientLifecycle,
@@ -24,10 +25,10 @@ where
     blocks[id as usize].ignore = true;
 
     let capacity = blocks[id as usize].packets.capacity();
-    let packets = mem::replace(
-        &mut blocks[id as usize].packets,
-        Vec::with_capacity(capacity),
-    );
+    let replacement = packet_vec_pool
+        .pop()
+        .unwrap_or_else(|| Vec::with_capacity(capacity));
+    let mut packets = mem::replace(&mut blocks[id as usize].packets, replacement);
 
     let nb_packets = packets.len();
 
@@ -37,7 +38,14 @@ where
     #[allow(clippy::cast_precision_loss)]
     metrics::histogram!("lidi_receive_decode_with_n_packets").record(packets.len() as f64);
 
-    match receiver.raptorq.decode(id, packets) {
+    // `drain` empties `packets` into the decoder without giving up its allocation, so it can be
+    // pushed back onto the pool below for the next block to reuse. `into_iter()` (clippy's usual
+    // suggestion) would drop the allocation instead, defeating the point of the pool.
+    #[allow(clippy::iter_with_drain)]
+    let decoded = receiver.raptorq.decode(id, packets.drain(..));
+    packet_vec_pool.push(packets);
+
+    match decoded {
         None => {
             #[cfg(feature = "prometheus")]
             metrics::counter!("lidi_receive_blocks_decode_failed").increment(1);
@@ -90,6 +98,7 @@ pub enum Message {
     Packets(Vec<raptorq::EncodingPacket>),
 }
 
+#[allow(clippy::too_many_lines)]
 pub fn start<Lifecycle>(
     receiver: &crate::Receiver<Lifecycle>,
     for_reblock: &crossbeam_channel::Receiver<Message>,
@@ -113,6 +122,10 @@ where
 
     let mut reset = true;
 
+    // Recycled across blocks: `send_to_dispatch` pops a drained `Vec` from here instead of
+    // allocating, and pushes the one it just drained back once decoding is done.
+    let mut packet_vec_pool: Vec<Vec<raptorq::EncodingPacket>> = Vec::new();
+
     loop {
         let packets = match for_reblock.recv_timeout(receiver.config.reset_timeout) {
             Err(crossbeam_channel::RecvTimeoutError::Timeout) => {
@@ -132,7 +145,13 @@ where
                                 #[cfg(feature = "prometheus")]
                                 metrics::counter!("lidi_receive_blocks_lost").increment(1);
                             }
-                            let _ = send_to_dispatch(receiver, session_id, cur_id, &mut blocks)?;
+                            let _ = send_to_dispatch(
+                                receiver,
+                                session_id,
+                                cur_id,
+                                &mut blocks,
+                                &mut packet_vec_pool,
+                            )?;
                         }
                         cur_id = cur_id.wrapping_add(1);
                     }
@@ -204,12 +223,24 @@ where
 
         if fast_track {
             log::warn!("probable network interrupt, fast track first block");
-            let _ = send_to_dispatch(receiver, session_id, cur_id, &mut blocks)?;
+            let _ = send_to_dispatch(
+                receiver,
+                session_id,
+                cur_id,
+                &mut blocks,
+                &mut packet_vec_pool,
+            )?;
             cur_id = cur_id.wrapping_add(1);
         }
 
         while blocks[cur_id as usize].packets.len() >= min_nb_packets {
-            reset = send_to_dispatch(receiver, session_id, cur_id, &mut blocks)?;
+            reset = send_to_dispatch(
+                receiver,
+                session_id,
+                cur_id,
+                &mut blocks,
+                &mut packet_vec_pool,
+            )?;
             cur_id = cur_id.wrapping_add(1);
         }
     }

@@ -175,8 +175,14 @@ impl RaptorQ {
         packets
     }
 
+    // Accepting any `IntoIterator` (instead of requiring an owned `Vec`) lets callers pass a
+    // `Vec::drain(..)` so they can recycle the emptied `Vec`'s allocation once decoding is done.
     #[must_use]
-    pub fn decode(&self, block_id: u8, packets: Vec<raptorq::EncodingPacket>) -> Option<Vec<u8>> {
+    pub fn decode(
+        &self,
+        block_id: u8,
+        packets: impl IntoIterator<Item = raptorq::EncodingPacket>,
+    ) -> Option<Vec<u8>> {
         let mut decoder = raptorq::SourceBlockDecoder::new(
             block_id,
             &self.config,

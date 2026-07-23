@@ -90,6 +90,57 @@ where
     Ok(false)
 }
 
+// Forcibly decodes every non-empty block still in the current window: called on a reset
+// timeout, since no more packets are coming for this window.
+fn flush_pending_blocks<Lifecycle>(
+    receiver: &crate::Receiver<Lifecycle>,
+    session_id: protocol::SessionId,
+    cur_id: &mut u8,
+    min_nb_packets: usize,
+    blocks: &mut [Block],
+    packet_vec_pool: &mut Vec<Vec<raptorq::EncodingPacket>>,
+) -> Result<(), crate::Error>
+where
+    Lifecycle: ClientLifecycle,
+{
+    let prev = cur_id.wrapping_sub(1);
+    while *cur_id != prev {
+        let nb_packets = blocks[*cur_id as usize].packets.len();
+        if 0 < nb_packets {
+            if nb_packets < min_nb_packets {
+                log::warn!(
+                    "block {cur_id} is incomplete ({nb_packets} packets) after reset timeout, forcibly send to decode"
+                );
+                #[cfg(feature = "prometheus")]
+                metrics::counter!("lidi_receive_blocks_lost").increment(1);
+            }
+            let _ = send_to_dispatch(receiver, session_id, *cur_id, blocks, packet_vec_pool)?;
+        }
+        *cur_id = cur_id.wrapping_add(1);
+    }
+    Ok(())
+}
+
+// Resets the block window to start at `first_packet`'s block id, called after a reset timeout
+// or a new session. Returns the new `cur_id`.
+fn start_new_window(blocks: &mut [Block], first_packet: &raptorq::EncodingPacket) -> u8 {
+    for block in &mut *blocks {
+        block.ignore = true;
+        block.packets.clear();
+    }
+
+    let cur_id = first_packet.payload_id().source_block_number();
+
+    let mut id = cur_id;
+    let last = id.wrapping_add(WINDOW_WIDTH);
+    while id != last {
+        blocks[id as usize].ignore = false;
+        id = id.wrapping_add(1);
+    }
+
+    cur_id
+}
+
 pub enum Message {
     NewSession(protocol::SessionId),
     #[cfg(not(feature = "receive-mmsg"))]
@@ -98,7 +149,6 @@ pub enum Message {
     Packets(Vec<raptorq::EncodingPacket>),
 }
 
-#[allow(clippy::too_many_lines)]
 pub fn start<Lifecycle>(
     receiver: &crate::Receiver<Lifecycle>,
     for_reblock: &crossbeam_channel::Receiver<Message>,
@@ -141,27 +191,14 @@ where
 
                     reset = true;
 
-                    let prev = cur_id.wrapping_sub(1);
-                    while cur_id != prev {
-                        let nb_packets = blocks[cur_id as usize].packets.len();
-                        if 0 < nb_packets {
-                            if nb_packets < min_nb_packets {
-                                log::warn!(
-                                    "block {cur_id} is incomplete ({nb_packets} packets) after reset timeout, forcibly send to decode"
-                                );
-                                #[cfg(feature = "prometheus")]
-                                metrics::counter!("lidi_receive_blocks_lost").increment(1);
-                            }
-                            let _ = send_to_dispatch(
-                                receiver,
-                                session_id,
-                                cur_id,
-                                &mut blocks,
-                                &mut packet_vec_pool,
-                            )?;
-                        }
-                        cur_id = cur_id.wrapping_add(1);
-                    }
+                    flush_pending_blocks(
+                        receiver,
+                        session_id,
+                        &mut cur_id,
+                        min_nb_packets,
+                        &mut blocks,
+                        &mut packet_vec_pool,
+                    )?;
                 }
 
                 continue;
@@ -190,22 +227,7 @@ where
 
         if reset {
             reset = false;
-
-            for block in &mut blocks {
-                block.ignore = true;
-                block.packets.clear();
-            }
-
-            let first_packet = &packets[0];
-
-            cur_id = first_packet.payload_id().source_block_number();
-
-            let mut id = cur_id;
-            let last = id.wrapping_add(WINDOW_WIDTH);
-            while id != last {
-                blocks[id as usize].ignore = false;
-                id = id.wrapping_add(1);
-            }
+            cur_id = start_new_window(&mut blocks, &packets[0]);
         }
 
         let mut fast_track = false;

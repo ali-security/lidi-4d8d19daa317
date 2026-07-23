@@ -16,7 +16,26 @@ fn take_recycled(
     recycler.try_recv().unwrap_or_default()
 }
 
-#[allow(clippy::too_many_lines)]
+// Updates `*session_id` and notifies reblock whenever a datagram's session id doesn't match the
+// one currently tracked (which also covers the very first datagram, since `session_id` starts
+// at 0 and real session ids never are).
+fn track_session(
+    session_id: &mut protocol::SessionId,
+    datagram_session_id: protocol::SessionId,
+    to_reblock: &crossbeam_channel::Sender<reblock::Message>,
+) -> Result<(), crate::Error> {
+    if *session_id == 0 {
+        *session_id = datagram_session_id;
+        log::debug!("session is {session_id:x}");
+        to_reblock.send(reblock::Message::NewSession(*session_id))?;
+    } else if datagram_session_id != *session_id {
+        *session_id = datagram_session_id;
+        log::debug!("new session is {session_id:x}");
+        to_reblock.send(reblock::Message::NewSession(*session_id))?;
+    }
+    Ok(())
+}
+
 pub fn start<Lifecycle>(
     receiver: &crate::Receiver<Lifecycle>,
     port: u16,
@@ -89,15 +108,7 @@ where
 
                 let (datagram_session_id, packet) = protocol::session_split(datagram);
 
-                if session_id == 0 {
-                    session_id = datagram_session_id;
-                    log::debug!("session is {session_id:x}");
-                    to_reblock.send(reblock::Message::NewSession(session_id))?;
-                } else if datagram_session_id != session_id {
-                    session_id = datagram_session_id;
-                    log::debug!("new session is {session_id:x}");
-                    to_reblock.send(reblock::Message::NewSession(session_id))?;
-                }
+                track_session(&mut session_id, datagram_session_id, to_reblock)?;
 
                 let packet = raptorq::EncodingPacket::deserialize(packet);
 
@@ -118,15 +129,7 @@ where
                 // assume all datagrams are from the same session
                 let datagram_session_id = protocol::session_split(udp.datagram(0)).0;
 
-                if session_id == 0 {
-                    session_id = datagram_session_id;
-                    log::debug!("session is {session_id:x}");
-                    to_reblock.send(reblock::Message::NewSession(session_id))?;
-                } else if datagram_session_id != session_id {
-                    session_id = datagram_session_id;
-                    log::debug!("new session is {session_id:x}");
-                    to_reblock.send(reblock::Message::NewSession(session_id))?;
-                }
+                track_session(&mut session_id, datagram_session_id, to_reblock)?;
 
                 let mut packets = take_recycled(packet_vec_recycler);
                 packets.extend((0..nb_msg).filter_map(|i| {

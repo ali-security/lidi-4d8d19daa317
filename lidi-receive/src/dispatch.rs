@@ -35,7 +35,7 @@ where
 
     loop {
         #[cfg(not(feature = "heartbeat"))]
-        let block = receiver.for_dispatch.recv()?;
+        let message = receiver.for_dispatch.recv()?;
         #[cfg(feature = "heartbeat")]
         let message = match heartbeat_check.as_ref() {
             None => receiver.for_dispatch.recv()?,

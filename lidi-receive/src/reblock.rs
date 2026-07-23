@@ -1,7 +1,7 @@
 //! Worker for grouping packets according to their block numbers to handle potential UDP packets
 //! reordering
 
-use crate::ClientLifecycle;
+use crate::{ClientLifecycle, dispatch};
 use lidi_protocol as protocol;
 use std::{array, mem};
 
@@ -14,6 +14,7 @@ struct Block {
 
 fn send_to_dispatch<Lifecycle>(
     receiver: &crate::Receiver<Lifecycle>,
+    session_id: protocol::SessionId,
     id: u8,
     blocks: &mut [Block],
 ) -> Result<bool, crate::Error>
@@ -43,7 +44,7 @@ where
 
             log::error!("lost block {id} (failed to decode with {nb_packets} packets)");
 
-            receiver.to_dispatch.send(None)?;
+            receiver.to_dispatch.send(dispatch::Message::LostBlock)?;
         }
         Some(block) => {
             #[cfg(feature = "prometheus")]
@@ -51,9 +52,10 @@ where
 
             log::trace!("block {id} decoded ({} bytes)", block.len());
 
-            receiver
-                .to_dispatch
-                .send(Some(protocol::Block::deserialize(block)))?;
+            receiver.to_dispatch.send(dispatch::Message::Block(
+                session_id,
+                protocol::Block::deserialize(block),
+            ))?;
         }
     }
 
@@ -72,7 +74,7 @@ where
             metrics::counter!("lidi_receive_blocks_lost").increment(1);
             log::error!("lost block {opposite} (too far)");
             log::warn!("synchronization lost received, propagating");
-            receiver.to_dispatch.send(None)?;
+            receiver.to_dispatch.send(dispatch::Message::LostBlock)?;
             return Ok(true);
         }
     }
@@ -80,14 +82,17 @@ where
     Ok(false)
 }
 
+pub enum Message {
+    NewSession(protocol::SessionId),
+    #[cfg(not(feature = "receive-mmsg"))]
+    Packet(raptorq::EncodingPacket),
+    #[cfg(feature = "receive-mmsg")]
+    Packets(Vec<raptorq::EncodingPacket>),
+}
+
 pub fn start<Lifecycle>(
     receiver: &crate::Receiver<Lifecycle>,
-    #[cfg(not(feature = "receive-mmsg"))] for_reblock: &crossbeam_channel::Receiver<
-        Option<raptorq::EncodingPacket>,
-    >,
-    #[cfg(feature = "receive-mmsg")] for_reblock: &crossbeam_channel::Receiver<
-        Option<Vec<raptorq::EncodingPacket>>,
-    >,
+    for_reblock: &crossbeam_channel::Receiver<Message>,
 ) -> Result<(), crate::Error>
 where
     Lifecycle: ClientLifecycle,
@@ -102,6 +107,8 @@ where
         packets: Vec::with_capacity(nb_packets),
     });
 
+    let mut session_id = 0;
+
     let mut cur_id: u8 = 0;
 
     let mut reset = true;
@@ -110,6 +117,8 @@ where
         let packets = match for_reblock.recv_timeout(receiver.config.reset_timeout) {
             Err(crossbeam_channel::RecvTimeoutError::Timeout) => {
                 if !reset {
+                    log::debug!("reset timeout reached, flushing");
+
                     reset = true;
 
                     let prev = cur_id.wrapping_sub(1);
@@ -123,7 +132,7 @@ where
                                 #[cfg(feature = "prometheus")]
                                 metrics::counter!("lidi_receive_blocks_lost").increment(1);
                             }
-                            let _ = send_to_dispatch(receiver, cur_id, &mut blocks)?;
+                            let _ = send_to_dispatch(receiver, session_id, cur_id, &mut blocks)?;
                         }
                         cur_id = cur_id.wrapping_add(1);
                     }
@@ -132,20 +141,25 @@ where
                 continue;
             }
             Err(e) => return Err(crate::Error::from(e)),
-            Ok(None) => {
-                reset = true;
-                log::info!("new session detected, aborting existing connections");
-                receiver.to_dispatch.send(None)?;
-                continue;
-            }
-            Ok(Some(packets)) => {
-                #[cfg(not(feature = "receive-mmsg"))]
-                {
-                    [packets]
+            Ok(message) => match message {
+                Message::NewSession(new_session_id) => {
+                    reset = true;
+
+                    session_id = new_session_id;
+
+                    log::debug!("new session is {session_id:x}");
+
+                    receiver
+                        .to_dispatch
+                        .send(dispatch::Message::NewSession(session_id))?;
+
+                    continue;
                 }
+                #[cfg(not(feature = "receive-mmsg"))]
+                Message::Packet(packet) => [packet],
                 #[cfg(feature = "receive-mmsg")]
-                packets
-            }
+                Message::Packets(packets) => packets,
+            },
         };
 
         if reset {
@@ -190,12 +204,12 @@ where
 
         if fast_track {
             log::warn!("probable network interrupt, fast track first block");
-            let _ = send_to_dispatch(receiver, cur_id, &mut blocks)?;
+            let _ = send_to_dispatch(receiver, session_id, cur_id, &mut blocks)?;
             cur_id = cur_id.wrapping_add(1);
         }
 
         while blocks[cur_id as usize].packets.len() >= min_nb_packets {
-            reset = send_to_dispatch(receiver, cur_id, &mut blocks)?;
+            reset = send_to_dispatch(receiver, session_id, cur_id, &mut blocks)?;
             cur_id = cur_id.wrapping_add(1);
         }
     }

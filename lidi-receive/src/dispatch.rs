@@ -9,6 +9,12 @@ use std::{collections, thread};
 
 const WINDOW_WIDTH: protocol::ClientId = protocol::ClientId::MAX / 2;
 
+pub enum Message {
+    NewSession(protocol::SessionId),
+    LostBlock,
+    Block(protocol::SessionId, protocol::Block),
+}
+
 #[allow(clippy::too_many_lines)]
 pub fn start<Lifecycle>(receiver: &crate::Receiver<Lifecycle>) -> Result<(), crate::Error>
 where
@@ -23,13 +29,15 @@ where
         hb.mul_f32(1.25)
     });
 
+    let mut session_id = 0;
+
     let mut pending_start = collections::HashMap::new();
 
     loop {
         #[cfg(not(feature = "heartbeat"))]
         let block = receiver.for_dispatch.recv()?;
         #[cfg(feature = "heartbeat")]
-        let block = match heartbeat_check.as_ref() {
+        let message = match heartbeat_check.as_ref() {
             None => receiver.for_dispatch.recv()?,
             Some(hb_check) => match receiver.for_dispatch.recv_timeout(*hb_check) {
                 Err(crossbeam_channel::RecvTimeoutError::Timeout) => {
@@ -41,38 +49,77 @@ where
                     }
                     continue;
                 }
-                other => other?,
+                message => message?,
             },
         };
 
-        let Some(block) = block else {
-            // Synchonization has been lost
-            // Marking all active transfers as failed
+        let block = match message {
+            Message::LostBlock => {
+                pending_start.clear();
 
-            pending_start.clear();
+                let actives = receiver.active_transfers.clone();
+                for (client_id, client_sendq) in actives {
+                    receiver.failed_transfers.insert(client_id);
 
-            let actives = receiver.active_transfers.clone();
-            for (client_id, client_sendq) in actives {
-                receiver.failed_transfers.insert(client_id);
+                    let block = protocol::Block::new(
+                        None,
+                        protocol::BlockType::Abort,
+                        &receiver.raptorq,
+                        client_id,
+                        0,
+                        None,
+                    )?;
 
-                let block = protocol::Block::new(
-                    None,
-                    protocol::BlockType::Abort,
-                    &receiver.raptorq,
-                    client_id,
-                    0,
-                    None,
-                )?;
+                    if let Err(e) = client_sendq.try_send(block) {
+                        #[cfg(feature = "prometheus")]
+                        metrics::counter!("lidi_receive_client_queue_full").increment(1);
+                        log::error!("failed to send payload to client {client_id:x}: {e}");
+                    }
+                }
+                receiver.active_transfers.clear();
 
-                if let Err(e) = client_sendq.try_send(block) {
-                    #[cfg(feature = "prometheus")]
-                    metrics::counter!("lidi_receive_client_queue_full").increment(1);
-                    log::error!("failed to send payload to client {client_id:x}: {e}");
+                continue;
+            }
+            Message::NewSession(new_session_id) => {
+                if new_session_id != session_id {
+                    session_id = new_session_id;
+
+                    log::info!("new session is {new_session_id:x}");
+
+                    pending_start.clear();
+
+                    receiver.failed_transfers.clear();
+
+                    let actives = receiver.active_transfers.clone();
+                    for (client_id, client_sendq) in actives {
+                        let block = protocol::Block::new(
+                            None,
+                            protocol::BlockType::Abort,
+                            &receiver.raptorq,
+                            client_id,
+                            0,
+                            None,
+                        )?;
+
+                        if let Err(e) = client_sendq.try_send(block) {
+                            #[cfg(feature = "prometheus")]
+                            metrics::counter!("lidi_receive_client_queue_full").increment(1);
+                            log::error!("failed to send payload to client {client_id:x}: {e}");
+                        }
+                    }
+                    receiver.active_transfers.clear();
+                }
+
+                continue;
+            }
+            Message::Block(block_session_id, block) => {
+                if block_session_id == session_id {
+                    block
+                } else {
+                    log::debug!("ignoring block from old session");
+                    continue;
                 }
             }
-            receiver.active_transfers.clear();
-
-            continue;
         };
 
         log::trace!("received {block}");
@@ -88,6 +135,7 @@ where
         let client_id = block.client_id();
 
         if receiver.failed_transfers.contains(&client_id) {
+            log::trace!("ignoring packet for failed client {client_id:x}");
             continue;
         }
 
@@ -106,6 +154,7 @@ where
                 match protocol::EndpointId::deserialize(payload) {
                     None => {
                         log::error!("client {client_id:x} for invalid endpoint");
+                        receiver.failed_transfers.insert(client_id);
                     }
                     Some(endpoint_id) => {
                         let (client_sendq, client_recvq) =

@@ -18,7 +18,7 @@ above to learn more about their meaning*
 
 ## What is lidi?
 
-Lidi (leedee) allows you to copy TCP or Unix streams or files over a unidirectional link.
+Lidi (leedee) allows you to copy TCP, UDP or Unix streams or files over a unidirectional link.
 
 It is usually used along with an actual network diode device but it can also be used over regular bidirectional links for testing purposes.
 

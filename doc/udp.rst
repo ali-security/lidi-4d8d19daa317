@@ -1,3 +1,5 @@
+.. _Sending UDP with Lidi:
+
 Sending UDP with Lidi
 =====================
 
@@ -103,8 +105,8 @@ Start the components in this order:
 
 .. code-block:: bash
 
-   lidi-receive --config lidi-receive.toml &
-   lidi-send    --config lidi-send.toml    &
+   lidi-receive lidi-receive.toml &
+   lidi-send    lidi-send.toml    &
 
    lidi-udp-receive --from-tcp 127.0.0.1:6000 --to-bind 127.0.0.1:0 --to 127.0.0.1:7000 &
    lidi-udp-send    --to-tcp   127.0.0.1:4000 --from 127.0.0.1:5010

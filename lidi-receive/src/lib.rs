@@ -1,20 +1,24 @@
 //! Receiver functions module
 //!
 //! Several threads are involved in the receipt pipeline. Each worker is run with a `start`
-//! function of a submodule of the [`crate::receive`] module, data being passed through
+//! function of a submodule of this crate ([`crate`]), data being passed through
 //! [`crossbeam_channel`] bounded channels to form the following data pipeline:
 //!
 //! ```text
-//!       -----------             ------------------            ---------
-//! udp --| packets |-> reblock --| vec of packets |-> decode --| block |-> dispatch
-//!       -----------             ------------------            ---------
+//!       -----------                              ---------
+//! udp --| packets |-> reblock (RaptorQ decode) --| block |-> dispatch -> clients
+//!       -----------                              ---------
 //! ```
+//!
+//! The `reblock` worker both regroups the received packets into `RaptorQ` blocks and decodes them;
+//! there is no separate decode worker. The `dispatch` worker then routes each decoded block to the
+//! `clients` worker handling the matching client, which writes it to the output endpoint.
 //!
 //! Notes:
 //! - heartbeat does not need a dedicated worker on the receiver side, heartbeat blocks are
 //!   handled by the dispatch worker,
 //! - there are `max_clients` clients workers running in parallel,
-//! - there are `nb_decode_threads` decode workers running in parallel.
+//! - there is one `udp` (recv) worker and one `reblock` worker per configured UDP port.
 
 #[cfg(not(any(
     feature = "receive-native",
@@ -43,16 +47,27 @@ mod reblock;
 mod socket;
 mod udp;
 
+/// Errors returned by the receiver engine and its workers.
 pub enum Error {
+    /// An underlying I/O operation failed.
     Io(io::Error),
+    /// Sending received packets to the reblock worker failed.
     SendPackets,
+    /// Sending a block's packets between workers failed.
     SendBlockPackets,
+    /// Sending a decoded block to the dispatch worker failed.
     SendBlock,
+    /// Sending a client to a client worker failed.
     SendClients,
+    /// Receiving from an internal worker channel failed.
     Receive(crossbeam_channel::RecvError),
+    /// Receiving from an internal worker channel timed out.
     ReceiveTimeout(crossbeam_channel::RecvTimeoutError),
+    /// A protocol-level (block decoding) error occurred.
     Protocol(protocol::Error),
+    /// An internal invariant was violated.
     Internal(String),
+    /// A TLS error occurred.
     #[cfg(feature = "to-tls")]
     Tls(lidi_command_utils::tls::Error),
 }
@@ -215,8 +230,12 @@ impl From<&config::ReceiveConfig> for Config {
     }
 }
 
-/// An instance of this data structure is shared by workers to synchronize them and to access
-/// communication channels
+/// The receiver engine driving the receive/decode/dispatch pipeline.
+///
+/// It holds the shared configuration, `RaptorQ` state, worker channels and the active transfers,
+/// and starts all workers when [`Receiver::start`] is called. An instance is shared by all workers
+/// to synchronize them and to access the communication channels. The `Lifecycle` type parameter
+/// customizes how output clients are opened and closed (see [`ClientLifecycle`]).
 pub struct Receiver<Lifecycle>
 where
     Lifecycle: ClientLifecycle,
@@ -243,6 +262,7 @@ where
     client_lifecycle: Lifecycle,
 }
 
+/// A destination a decoded transfer can be written to (a TCP/TLS/Unix stream, or stdout).
 pub trait Client: io::Write + os::fd::AsRawFd {}
 
 impl Client for io::Stdout {}
@@ -256,13 +276,27 @@ impl Client for tls::TcpStream {}
 #[cfg(feature = "to-unix")]
 impl Client for unix::net::UnixStream {}
 
+/// Strategy for opening and closing the output [`Client`] of each transfer, letting callers
+/// customize what a transfer is written to (e.g. a socket, a file, or stdout for the oneshot
+/// receiver).
 pub trait ClientLifecycle: Send + Sync {
+    /// Opens the output client for a new transfer on `endpoint` (identified by `client_id`).
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if the output client cannot be created (e.g. connection failure).
     fn start(
         &self,
         endpoint: &config::Endpoint,
         client_id: protocol::ClientId,
     ) -> Result<Box<dyn Client>, Error>;
 
+    /// Closes the output `client` at the end of a transfer, `ok` indicating whether the transfer
+    /// completed successfully.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if finalizing the output client fails.
     fn end(&self, client: Box<dyn Client>, ok: bool) -> Result<(), Error>;
 }
 
@@ -307,6 +341,12 @@ where
         }
     }
 
+    /// Builds a new receiver from the given configuration, `RaptorQ` parameters and client
+    /// lifecycle. Workers are not started until [`Receiver::start`] is called.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if the receiver cannot be constructed from the configuration.
     pub fn new(
         config: &config::ReceiveConfig,
         raptorq: protocol::RaptorQ,
@@ -338,9 +378,13 @@ where
         })
     }
 
+    /// Spawns all worker threads (per-port recv and reblock workers, the dispatch worker, the
+    /// optional metrics worker, and `max_clients` client workers) into `scope`, returning once
+    /// they are running.
+    ///
     /// # Errors
     ///
-    /// Will return `Err` if scoped threads cannot spawned.
+    /// Will return `Err` if no UDP port is configured or if a scoped thread cannot be spawned.
     #[allow(clippy::too_many_lines)]
     pub fn start<'a>(&'a self, scope: &'a thread::Scope<'a, '_>) -> Result<(), Error> {
         log::info!(

@@ -19,10 +19,14 @@ const DEFAULT_REPAIR_PERCENTAGE: u8 = 1;
 const DEFAULT_RESET_TIMEOUT_SECONDS: u64 = 2;
 const DEFAULT_CLIENT_QUEUE_SIZE: usize = 0;
 
+/// Errors that can occur while parsing an endpoint description or loading the configuration file.
 #[derive(Debug)]
 pub enum Error {
+    /// An endpoint description string is malformed.
     Endpoint(String),
+    /// Reading the configuration file failed.
     Io(io::Error),
+    /// Parsing the configuration file as TOML failed.
     Parsing(toml::de::Error),
 }
 
@@ -50,12 +54,16 @@ impl fmt::Display for Error {
     }
 }
 
+/// System call strategy used to send or receive UDP datagrams.
 #[derive(Clone, Copy, PartialEq, Eq, Deserialize)]
 #[cfg_attr(feature = "command-line", derive(clap::ValueEnum))]
 #[serde(rename_all = "lowercase", deny_unknown_fields)]
 pub enum Mode {
+    /// One datagram per `send`/`recv` call.
     Native,
+    /// One datagram per `sendmsg`/`recvmsg` call.
     Msg,
+    /// Batched datagrams per `sendmmsg`/`recvmmsg` call (highest throughput).
     Mmsg,
 }
 
@@ -69,9 +77,13 @@ impl fmt::Display for Mode {
     }
 }
 
+/// Per-endpoint options that can be attached to an endpoint description with the
+/// `[flush=...,hash=...]` syntax.
 #[derive(Clone, Copy, Default, Debug)]
 pub struct EndpointOptions {
+    /// Flush after every read/write instead of waiting for a full block or an end-of-transfer.
     pub flush: bool,
+    /// Compute (sender) or verify (receiver) a hash of the transferred data.
     pub hash: bool,
 }
 
@@ -107,23 +119,34 @@ impl FromStr for EndpointOptions {
     }
 }
 
+/// A client endpoint: where the sender reads data from, or where the receiver forwards it to.
 #[derive(Clone, Debug)]
 pub enum Endpoint {
+    /// A plain TCP socket endpoint.
     Tcp {
+        /// Address the socket connects to or listens on.
         address: net::SocketAddr,
+        /// Per-endpoint options.
         options: EndpointOptions,
     },
+    /// A TLS-over-TCP socket endpoint.
     Tls {
+        /// Address the socket connects to or listens on.
         address: net::SocketAddr,
+        /// Per-endpoint options.
         options: EndpointOptions,
     },
+    /// A Unix-domain socket endpoint.
     Unix {
+        /// Path of the Unix socket.
         path: path::PathBuf,
+        /// Per-endpoint options.
         options: EndpointOptions,
     },
 }
 
 impl Endpoint {
+    /// Returns the [`EndpointOptions`] attached to this endpoint, whatever its kind.
     #[must_use]
     pub const fn options(&self) -> &EndpointOptions {
         match self {
@@ -230,6 +253,8 @@ impl<'de> Deserialize<'de> for Endpoint {
     }
 }
 
+/// Parameters shared by the sender and the receiver, stored at the top level of the configuration
+/// file. They must be identical on both sides of the diode.
 #[derive(Clone, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 #[cfg_attr(feature = "command-line", derive(clap::Parser))]
@@ -281,6 +306,7 @@ pub struct CommonConfig {
             help = "Maximal number of simultaneous clients connections"
         )
     )]
+    /// Maximum number of simultaneous client connections/transfers (raw, unresolved value).
     pub max_clients: Option<u32>,
     #[cfg_attr(
         feature = "command-line",
@@ -289,15 +315,18 @@ pub struct CommonConfig {
             help = "Duration in seconds between sent/expected heartbeat message (0 to disable)"
         )
     )]
+    /// Heartbeat period in seconds, `0` or unset to disable (raw, unresolved value).
     pub heartbeat: Option<u64>,
 }
 
 impl CommonConfig {
+    /// MTU of the UDP link, or the default (`1500`) if unset.
     #[must_use]
     pub fn mtu(&self) -> u16 {
         self.mtu.unwrap_or(DEFAULT_MTU)
     }
 
+    /// UDP ports used for the transfer, or the default (`[5000]`) if unset.
     #[must_use]
     pub fn ports(&self) -> Vec<u16> {
         self.ports
@@ -305,21 +334,25 @@ impl CommonConfig {
             .unwrap_or_else(|| Vec::from(DEFAULT_PORTS))
     }
 
+    /// `RaptorQ` block size in bytes, or the default (`220000`) if unset.
     #[must_use]
     pub fn block(&self) -> u32 {
         self.block.unwrap_or(DEFAULT_BLOCK)
     }
 
+    /// Repair packet percentage, or the default (`1`) if unset.
     #[must_use]
     pub fn repair(&self) -> u8 {
         self.repair.unwrap_or(DEFAULT_REPAIR_PERCENTAGE)
     }
 
+    /// Maximum number of simultaneous clients, or the default (`2`) if unset.
     #[must_use]
     pub fn max_clients(&self) -> u32 {
         self.max_clients.unwrap_or(DEFAULT_MAX_CLIENTS)
     }
 
+    /// Heartbeat period as a [`time::Duration`], or `None` when disabled (unset or `0`).
     #[must_use]
     pub fn heartbeat(&self) -> Option<time::Duration> {
         self.heartbeat
@@ -335,9 +368,13 @@ impl CommonConfig {
     derive(clap::ValueEnum),
     clap(rename_all = "snake_case")
 )]
+/// Minimum accepted TLS protocol version.
 pub enum TlsVersion {
+    /// TLS 1.1.
     Tls1_1,
+    /// TLS 1.2.
     Tls1_2,
+    /// TLS 1.3 (default).
     #[default]
     Tls1_3,
 }
@@ -349,15 +386,22 @@ pub enum TlsVersion {
     derive(clap::ValueEnum),
     clap(rename_all = "snake_case")
 )]
+/// Preset `OpenSSL` server configuration profile (Mozilla recommendations).
 #[allow(non_camel_case_types)]
 pub enum TlsMethod {
+    /// Mozilla "Intermediate" profile, revision 4.
     Mozilla_Intermediate_v4,
+    /// Mozilla "Intermediate" profile, revision 5.
     Mozilla_Intermediate_v5,
+    /// Mozilla "Modern" profile, revision 4.
     Mozilla_Modern_v4,
+    /// Mozilla "Modern" profile, revision 5 (default).
     #[default]
     Mozilla_Modern_v5,
 }
 
+/// TLS material and settings for `tls:` endpoints, from the `[send.tls]` / `[receive.tls]`
+/// configuration tables or the `--tls-*` command line options.
 #[derive(Clone, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 #[cfg_attr(feature = "command-line", derive(clap::Parser))]
@@ -411,6 +455,7 @@ pub struct TlsConfig {
     pub(crate) groups: Option<String>,
 }
 
+/// Receiver-specific parameters, from the `[receive]` configuration section.
 #[derive(Clone, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 #[cfg_attr(feature = "command-line", derive(clap::Parser))]
@@ -516,61 +561,74 @@ impl Receive {
         self.log4rs_config.clone()
     }
 
+    /// Address the Prometheus exporter should listen on, if enabled.
     #[must_use]
     pub const fn prometheus_listen(&self) -> Option<net::SocketAddr> {
         self.prometheus_listen
     }
 
+    /// Destination endpoints data is forwarded to.
     #[must_use]
     pub fn to(&self) -> Vec<Endpoint> {
         self.to.clone()
     }
 
+    /// IP address or hostname to listen on for sender UDP packets, or the default (`127.0.0.1`).
     #[must_use]
     pub fn from(&self) -> &str {
         self.from.as_ref().map_or(DEFAULT_RECEIVER, String::as_str)
     }
 
+    /// UDP receive mode, or `None` to let the receiver pick the best available one.
     #[must_use]
     pub const fn mode(&self) -> Option<Mode> {
         self.mode
     }
 
+    /// Maximum number of `RaptorQ` blocks buffered per client (`0` means unbounded).
     #[must_use]
     pub fn client_queue_size(&self) -> usize {
         self.client_queue_size.unwrap_or(DEFAULT_CLIENT_QUEUE_SIZE)
     }
 
+    /// Maximum items in the reblock pipeline queue (`0` means unbounded).
     #[must_use]
     pub fn reblock_queue_size(&self) -> usize {
         self.reblock_queue_size.unwrap_or(0)
     }
 
+    /// Maximum items in the dispatch pipeline queue (`0` means unbounded).
     #[must_use]
     pub fn dispatch_queue_size(&self) -> usize {
         self.dispatch_queue_size.unwrap_or(0)
     }
 
+    /// Maximum items in the clients pipeline queue (`0` means unbounded).
     #[must_use]
     pub fn clients_queue_size(&self) -> usize {
         self.clients_queue_size.unwrap_or(0)
     }
 
+    /// Duration without UDP packets before the `RaptorQ` internal state is reset, or the default
+    /// (`2` seconds).
     #[must_use]
     pub fn reset_timeout(&self) -> time::Duration {
         time::Duration::from_secs(self.reset_timeout.unwrap_or(DEFAULT_RESET_TIMEOUT_SECONDS))
     }
 
+    /// Duration without data for a client before its connection is closed, or `None` when disabled.
     #[must_use]
     pub fn abort_timeout(&self) -> Option<time::Duration> {
         self.abort_timeout.map(time::Duration::from_secs)
     }
 
+    /// Returns the TLS configuration, or a default one when none was provided.
     #[must_use]
     pub fn tls(&self) -> TlsConfig {
         self.tls.clone().unwrap_or_default()
     }
 
+    /// Returns a mutable reference to the TLS configuration, creating a default one if needed.
     #[must_use]
     #[allow(clippy::missing_panics_doc)]
     pub fn tls_mut(&mut self) -> &mut TlsConfig {
@@ -581,6 +639,7 @@ impl Receive {
     }
 }
 
+/// Sender-specific parameters, from the `[send]` configuration section.
 #[derive(Clone, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 #[cfg_attr(feature = "command-line", derive(clap::Parser))]
@@ -647,21 +706,25 @@ impl Send {
         self.log4rs_config.clone()
     }
 
+    /// Address the Prometheus exporter should listen on, if enabled.
     #[must_use]
     pub const fn prometheus_listen(&self) -> Option<net::SocketAddr> {
         self.prometheus_listen
     }
 
+    /// Source endpoints data is read from.
     #[must_use]
     pub fn from(&self) -> Vec<Endpoint> {
         self.from.clone()
     }
 
+    /// IP address or hostname of the receiver, or the default (`127.0.0.1`).
     #[must_use]
     pub fn to(&self) -> &str {
         self.to.as_ref().map_or(DEFAULT_RECEIVER, String::as_str)
     }
 
+    /// Local address the UDP socket binds to, or `0.0.0.0:0` by default.
     #[must_use]
     pub fn to_bind(&self) -> net::SocketAddr {
         let ip4 = net::Ipv4Addr::UNSPECIFIED;
@@ -669,16 +732,19 @@ impl Send {
             .unwrap_or_else(|| net::SocketAddr::new(net::IpAddr::V4(ip4), 0))
     }
 
+    /// UDP send mode, or `None` to let the sender pick the best available one.
     #[must_use]
     pub const fn mode(&self) -> Option<Mode> {
         self.mode
     }
 
+    /// Returns the TLS configuration, or a default one when none was provided.
     #[must_use]
     pub fn tls(&self) -> TlsConfig {
         self.tls.clone().unwrap_or_default()
     }
 
+    /// Returns a mutable reference to the TLS configuration, creating a default one if needed.
     #[must_use]
     #[allow(clippy::missing_panics_doc)]
     pub fn tls_mut(&mut self) -> &mut TlsConfig {
@@ -689,11 +755,14 @@ impl Send {
     }
 }
 
+/// Full configuration seen by the receiver binary: common parameters plus the `[receive]` section.
 #[cfg_attr(feature = "command-line", derive(clap::Parser))]
 #[derive(Default)]
 pub struct ReceiveConfig {
+    /// Parameters common to both sides.
     #[cfg_attr(feature = "command-line", clap(flatten))]
     pub common: CommonConfig,
+    /// Receiver-specific parameters.
     #[cfg_attr(feature = "command-line", clap(flatten))]
     pub receive: Receive,
 }
@@ -707,11 +776,14 @@ impl From<Config> for ReceiveConfig {
     }
 }
 
+/// Full configuration seen by the sender binary: common parameters plus the `[send]` section.
 #[cfg_attr(feature = "command-line", derive(clap::Parser))]
 #[derive(Default)]
 pub struct SendConfig {
+    /// Parameters common to both sides.
     #[cfg_attr(feature = "command-line", clap(flatten))]
     pub common: CommonConfig,
+    /// Sender-specific parameters.
     #[cfg_attr(feature = "command-line", clap(flatten))]
     pub send: Send,
 }
@@ -725,6 +797,8 @@ impl From<Config> for SendConfig {
     }
 }
 
+/// Complete deserialized configuration file, holding the common parameters and both the
+/// `[send]` and `[receive]` sections.
 #[derive(Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct Config {

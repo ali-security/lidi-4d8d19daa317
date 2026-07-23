@@ -1,22 +1,23 @@
 //! Sender functions module
 //!
 //! Several threads are used to form a pipeline for the data to be prepared before sending it over
-//! UDP. Every submodule of the [`crate::send`] module is equipped with a `start` function that
-//! launch the worker process. Data pass through the workers pipelines via [`crossbeam_channel`]
-//! bounded channels.
+//! UDP. Each worker is run with the `start` function of a submodule of this crate ([`crate`]).
+//! Data pass through the workers pipelines via [`crossbeam_channel`] bounded channels.
 //!
 //! Here follows a simplified representation of the workers pipeline:
 //!
 //! ```text
-//!             ----------             ---------
-//! listeners --| client |-> clients --| block |-> udp
-//!             ----------             ---------
+//!             ----------             ---------             -----------
+//! listeners --| client |-> clients --| block |-> encode --| packets |-> udp
+//!             ----------             ---------             -----------
 //! ```
 //!
 //! Notes:
-//! - listeners threads are spawned from binary and not the library crate,
-//! - heartbeat worker has been omitted from the representation for readability,
-//! - there are `max_clients` clients workers running in parallel,
+//! - listeners threads are spawned from the binary and not the library crate,
+//! - the heartbeat worker has been omitted from the representation for readability,
+//! - there are `max_clients` clients workers (spawned as `client_<n>` threads running
+//!   `server::start`) running in parallel,
+//! - there is one `encode` worker and one `udp` worker per configured UDP port.
 
 #[cfg(not(any(feature = "send-native", feature = "send-msg", feature = "send-mmsg")))]
 compile_error!("at least one of send-native, send-msg, or send-mmsg features must be enabled");
@@ -44,12 +45,19 @@ mod server;
 mod socket;
 mod udp;
 
+/// Errors returned by the sender engine and its workers.
 pub enum Error {
+    /// An underlying I/O operation failed.
     Io(io::Error),
+    /// Sending an encoded packet to the UDP socket failed.
     SendToUdp,
+    /// Receiving from an internal worker channel failed.
     Receive(crossbeam_channel::RecvError),
+    /// A protocol-level (block encoding) error occurred.
     Protocol(protocol::Error),
+    /// An internal invariant was violated (e.g. no UDP port configured).
     Internal(String),
+    /// A TLS error occurred.
     #[cfg(feature = "from-tls")]
     Tls(tls::Error),
 }
@@ -166,8 +174,11 @@ impl From<&config::SendConfig> for Config {
     }
 }
 
-/// An instance of this data structure is shared by workers to synchronize them and to access
-/// communication channels
+/// The sender engine driving the encode/send pipeline.
+///
+/// It holds the shared configuration, session state and worker channels, and starts all workers
+/// when [`Sender::start`] is called. An instance is shared by all workers to synchronize them and
+/// to access the communication channels.
 ///
 /// The `C` type variable represents the socket from which data is read before being sent over the
 /// diode.
@@ -201,6 +212,13 @@ where
         }
     }
 
+    /// Builds a new sender from the given configuration and `RaptorQ` parameters. Workers are not
+    /// started until [`Sender::start`] is called.
+    ///
+    /// # Errors
+    ///
+    /// Will return `Err` if no UDP port is configured or if a session identifier cannot be
+    /// randomly generated.
     pub fn new(config: &config::SendConfig, raptorq: protocol::RaptorQ) -> Result<Self, Error> {
         let config = Config::from(config);
 
@@ -231,14 +249,18 @@ where
         })
     }
 
+    /// Returns the TLS configuration used to accept `tls:` client connections.
     #[cfg(feature = "from-tls")]
     pub const fn tls(&self) -> &config::TlsConfig {
         &self.config.tls
     }
 
+    /// Spawns all worker threads (encode and udp per port, the optional heartbeat and metrics
+    /// workers, and `max_clients` client workers) into `scope`, returning once they are running.
+    ///
     /// # Errors
     ///
-    /// Will return `Err` if scoped threads cannot spawned.
+    /// Will return `Err` if a scoped thread cannot be spawned.
     pub fn start<'a>(&'a self, scope: &'a thread::Scope<'a, '_>) -> Result<(), Error> {
         log::info!(
             "max {} simultaneous clients/transfers",
@@ -321,9 +343,12 @@ where
         Ok(())
     }
 
+    /// Enqueues a newly accepted client connection (bound to `endpoint_id` with the given
+    /// options) to be served by one of the client workers.
+    ///
     /// # Errors
     ///
-    /// Will return `Err` if the `send` returns a `SendError<T>`.
+    /// Will return `Err` if the client cannot be enqueued (the internal channel is disconnected).
     pub fn new_client(
         &self,
         endpoint_id: protocol::EndpointId,
@@ -339,9 +364,12 @@ where
         Ok(())
     }
 
+    /// Signals the client workers to stop once the currently queued work has been drained.
+    ///
     /// # Errors
     ///
-    /// Will return `Err` if the `send` returns a `SendError<T>`.
+    /// Will return `Err` if the stop signal cannot be enqueued (the internal channel is
+    /// disconnected).
     pub fn stop(&self) -> Result<(), Error> {
         if let Err(e) = self.to_server.send(None) {
             return Err(Error::Internal(format!("failed to stop: {e}")));

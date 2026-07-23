@@ -1,33 +1,53 @@
+//! Client-side helpers and building blocks for the lidi utility binaries.
+//!
+//! This crate implements the file/directory transfer protocol ([`mod@file`]) and the UDP tunnel
+//! ([`udp`]) that run on top of the raw stream diode, along with the shared connection endpoints
+//! ([`DiodeSend`], [`DiodeReceive`]), TLS client options ([`Tls`]) and logger setup used by the
+//! `lidi-file-*`, `lidi-dir-send` and `lidi-udp-*` binaries.
+
 use std::{fmt, net, path};
 
 #[cfg(not(any(feature = "tcp", feature = "tls", feature = "unix")))]
 compile_error!("at least one of tcp, tls, or unix features must be enabled");
 
+/// File and directory transfer protocol over the diode.
 pub mod file;
 #[cfg(feature = "hash")]
 pub(crate) mod hash;
+/// TLS client context and stream helpers built on top of `OpenSSL`.
 #[cfg(feature = "tls")]
 pub mod tls;
+/// UDP datagram tunnel over the diode.
 pub mod udp;
 
+/// Minimum accepted TLS protocol version for a client connection.
 #[derive(Clone, Copy, clap::ValueEnum)]
 #[clap(rename_all = "snake_case")]
 pub enum TlsVersion {
+    /// TLS 1.1.
     Tls1_1,
+    /// TLS 1.2.
     Tls1_2,
+    /// TLS 1.3.
     Tls1_3,
 }
 
+/// Preset `OpenSSL` server configuration profile (Mozilla recommendations).
 #[derive(Clone, Copy, clap::ValueEnum)]
 #[clap(rename_all = "snake_case")]
 #[allow(non_camel_case_types)]
 pub enum TlsMethod {
+    /// Mozilla "Intermediate" profile, revision 4.
     Mozilla_Intermediate_v4,
+    /// Mozilla "Intermediate" profile, revision 5.
     Mozilla_Intermediate_v5,
+    /// Mozilla "Modern" profile, revision 4.
     Mozilla_Modern_v4,
+    /// Mozilla "Modern" profile, revision 5.
     Mozilla_Modern_v5,
 }
 
+/// TLS material and settings for a client connection, from the `--tls-*` command line options.
 #[derive(Clone, Default, clap::Parser)]
 #[allow(clippy::struct_field_names)]
 pub struct Tls {
@@ -98,9 +118,13 @@ impl Tls {
     }
 }
 
+/// Address of the `lidi-send` input endpoint a sending client connects to.
 pub enum DiodeSend {
+    /// Connect over plain TCP to the given address.
     Tcp(net::SocketAddr),
+    /// Connect over TLS to the given address.
     Tls(net::SocketAddr),
+    /// Connect over a Unix-domain socket at the given path.
     Unix(path::PathBuf),
 }
 
@@ -114,9 +138,14 @@ impl fmt::Display for DiodeSend {
     }
 }
 
+/// Listening address a receiving client accepts the `lidi-receive` connection on. Exactly one
+/// field is expected to be set.
 pub struct DiodeReceive {
+    /// Accept a plain TCP connection on this address.
     pub from_tcp: Option<net::SocketAddr>,
+    /// Accept a TLS connection on this address.
     pub from_tls: Option<net::SocketAddr>,
+    /// Accept a Unix-domain socket connection at this path.
     pub from_unix: Option<path::PathBuf>,
 }
 
@@ -157,6 +186,13 @@ fn init_logger_simplelog(level_filter: log::LevelFilter) -> Result<(), String> {
     .map_err(|e| format!("failed to initialize simplelog: {e}"))
 }
 
+/// Initializes the client logger at `level_filter`, using the `log4rs` YAML file at
+/// `log4rs_config` when provided (and the `log4rs` feature is enabled), otherwise a terminal
+/// logger.
+///
+/// # Errors
+///
+/// Will return `Err` if the logger cannot be initialized (e.g. an invalid `log4rs` file).
 pub fn init_logger(
     level_filter: log::LevelFilter,
     log4rs_config: Option<&path::PathBuf>,

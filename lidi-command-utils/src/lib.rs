@@ -1,29 +1,48 @@
+//! Shared command-line, configuration and low-level helpers for the lidi binaries.
+//!
+//! This crate parses the TOML configuration file and command line arguments (via the
+//! [`config`] module), sets up logging, the optional Prometheus exporter and the global
+//! allocator, and exposes socket, hash and TLS helpers used by both the sender and the receiver.
+
 #[cfg(feature = "command-line")]
 use clap::Parser;
 use std::{env, fmt, net, path};
 
+/// Configuration model (TOML file and command line) shared by the sender and the receiver.
 pub mod config;
+/// Content hashing helper used to check transfer integrity.
 #[cfg(feature = "hash")]
 pub mod hash;
+/// Low-level socket helpers (buffer sizing, timeouts).
 pub mod socket;
+/// TLS context and stream helpers built on top of `OpenSSL`.
 #[cfg(feature = "tls")]
 pub mod tls;
 
+/// Human-readable name of the global allocator selected at compilation, for logging.
 #[cfg(not(feature = "mimalloc"))]
 pub const ALLOCATOR_NAME: &str = "default allocator";
 
 #[cfg(feature = "mimalloc")]
 #[global_allocator]
 static GLOBAL_ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
+/// Human-readable name of the global allocator selected at compilation, for logging.
 #[cfg(feature = "mimalloc")]
 pub const ALLOCATOR_NAME: &str = "mimalloc";
 
+/// Errors that can occur while parsing arguments, loading configuration or initializing the
+/// logger, TLS or the Prometheus exporter.
 pub enum Error {
+    /// Command line arguments were invalid (e.g. too many positional arguments).
     Arguments(String),
+    /// Loading or parsing the configuration file failed.
     Config(config::Error),
+    /// Logger initialization failed.
     Logger(String),
+    /// TLS initialization failed.
     #[cfg(feature = "tls")]
     Tls(tls::Error),
+    /// The Prometheus exporter could not be built or bound.
     #[cfg(feature = "prometheus")]
     Prometheus(metrics_exporter_prometheus::BuildError),
 }
@@ -121,9 +140,12 @@ fn init_prometheus(prometheus_listen: Option<net::SocketAddr>) -> Result<(), Err
     Ok(())
 }
 
+/// Which side of the diode a binary implements, selecting the configuration section to read.
 #[derive(Clone, Copy)]
 pub enum Role {
+    /// Receiver side (reads the `[receive]` configuration section).
     Receive,
+    /// Sender side (reads the `[send]` configuration section).
     Send,
 }
 
@@ -195,6 +217,16 @@ fn no_command_line() -> Result<config::Config, Error> {
     Ok(config)
 }
 
+/// Builds the effective [`config::Config`] for the given `role` and performs the shared startup.
+///
+/// It parses the configuration file and command line arguments, initializes the logger (on stderr
+/// only when `stderr_only` is set), optionally initializes TLS (`tls_init`) and the Prometheus
+/// exporter (`prometheus_init`), and logs the crate version.
+///
+/// # Errors
+///
+/// Will return `Err` if arguments or the configuration file are invalid, or if logger, TLS or
+/// Prometheus initialization fails.
 #[allow(unused)]
 pub fn command_arguments(
     role: Role,

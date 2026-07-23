@@ -9,9 +9,14 @@ use std::{
     str::FromStr,
 };
 
+/// Allocates a new sending [`clients::file::Config`] from an `ip:port` C string.
+///
+/// Returns a raw pointer to the config, or a null pointer if `ptr_addr` is null. The returned
+/// pointer must be released with [`diode_free_config`].
+///
 /// # Panics
 ///
-/// Will return `Err` if ip and port cannot be parsed.
+/// Will panic if `ptr_addr` does not contain a valid `ip:port` address.
 #[unsafe(no_mangle)]
 #[allow(clippy::missing_safety_doc)]
 pub unsafe extern "C" fn diode_new_config(
@@ -42,6 +47,8 @@ pub unsafe extern "C" fn diode_new_config(
     Box::into_raw(config)
 }
 
+/// Frees a [`clients::file::Config`] previously allocated by [`diode_new_config`]. Does nothing if
+/// `ptr` is null.
 #[unsafe(no_mangle)]
 #[allow(clippy::missing_safety_doc)]
 pub unsafe extern "C" fn diode_free_config(ptr: *mut clients::file::Config<clients::DiodeSend>) {
@@ -53,9 +60,13 @@ pub unsafe extern "C" fn diode_free_config(ptr: *mut clients::file::Config<clien
     }
 }
 
+/// Sends the file at `ptr_filepath` through the diode described by `config`.
+///
+/// Returns the number of bytes sent (0 on any error, including null pointers).
+///
 /// # Panics
 ///
-/// Will return `Err` if reference to `config` is wrong.
+/// Will panic if `ptr` is non-null but cannot be dereferenced into a valid `config` reference.
 #[unsafe(no_mangle)]
 #[allow(clippy::missing_safety_doc)]
 pub unsafe extern "C" fn diode_send_file(
@@ -79,9 +90,14 @@ pub unsafe extern "C" fn diode_send_file(
     u32::try_from(result).unwrap_or(0)
 }
 
+/// Receives files into the `ptr_odir` output directory.
+///
+/// Uses the endpoint address stored in `config` as the source to accept the connection from
+/// `lidi-receive`. Does nothing if a pointer argument is null.
+///
 /// # Panics
 ///
-/// Will return `Err` if reference to `config` is wrong.
+/// Will panic if `ptr` is non-null but cannot be dereferenced into a valid `config` reference.
 #[unsafe(no_mangle)]
 #[allow(clippy::missing_safety_doc)]
 pub unsafe extern "C" fn diode_receive_files(

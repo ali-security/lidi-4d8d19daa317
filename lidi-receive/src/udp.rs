@@ -94,12 +94,12 @@ where
                 to_reblock.send(reblock::Message::Packets(vec![packet]))?;
             }
             #[cfg(feature = "receive-mmsg")]
-            socket::ReceiveDatagrams::Multiple(datagrams) => {
+            socket::ReceiveDatagrams::Multiple(nb_msg, _) => {
                 #[cfg(feature = "prometheus")]
-                metrics::counter!("lidi_receive_udp_packets").increment(datagrams.len() as u64);
+                metrics::counter!("lidi_receive_udp_packets").increment(nb_msg as u64);
 
                 // assume all datagrams are from the same session
-                let datagram_session_id = protocol::session_split(datagrams[0]).0;
+                let datagram_session_id = protocol::session_split(udp.datagram(0)).0;
 
                 if session_id == 0 {
                     session_id = datagram_session_id;
@@ -111,10 +111,10 @@ where
                     to_reblock.send(reblock::Message::NewSession(session_id))?;
                 }
 
-                let packets: Vec<_> = datagrams
-                    .into_iter()
-                    .filter_map(|datagram| {
-                        let (datagram_session_id, datagram) = protocol::session_split(datagram);
+                let packets: Vec<_> = (0..nb_msg)
+                    .filter_map(|i| {
+                        let (datagram_session_id, datagram) =
+                            protocol::session_split(udp.datagram(i));
                         if datagram_session_id == session_id {
                             Some(raptorq::EncodingPacket::deserialize(datagram))
                         } else {

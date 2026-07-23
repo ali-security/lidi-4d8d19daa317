@@ -1,6 +1,6 @@
 use lidi_command_utils::{config, socket};
 #[cfg(feature = "receive-mmsg")]
-use std::ptr;
+use std::{marker, ptr};
 use std::{io, net, os::fd::AsRawFd};
 #[cfg(any(feature = "receive-msg", feature = "receive-mmsg"))]
 use std::{mem, pin};
@@ -16,8 +16,10 @@ pub fn set_socket_recv_buffer_size<S: AsRawFd>(socket: &S, size: i32) -> Result<
 pub enum ReceiveDatagrams<'a> {
     #[cfg(any(feature = "receive-native", feature = "receive-msg"))]
     Single(&'a [u8]),
+    // Number of datagrams received; fetch each one via `Receive::datagram`. The `PhantomData`
+    // keeps `'a` used when this is the only variant (mmsg enabled without native/msg).
     #[cfg(feature = "receive-mmsg")]
-    Multiple(Vec<&'a [u8]>),
+    Multiple(usize, marker::PhantomData<&'a ()>),
 }
 
 #[cfg(feature = "receive-native")]
@@ -113,6 +115,7 @@ pub struct ReceiveMmsg {
     mmsghdr: Vec<libc::mmsghdr>,
     _iovecs: pin::Pin<Vec<libc::iovec>>,
     buffers: Vec<pin::Pin<Vec<u8>>>,
+    nb_msg: usize,
 }
 
 #[cfg(feature = "receive-mmsg")]
@@ -144,9 +147,12 @@ impl ReceiveMmsg {
             mmsghdr,
             _iovecs: iovecs,
             buffers,
+            nb_msg: 0,
         }
     }
 
+    // Returns the number of datagrams received; each one is fetched on demand via `datagram`
+    // instead of being collected into a `Vec` here, so this hot-path call never allocates.
     fn recv(&mut self) -> Result<ReceiveDatagrams<'_>, io::Error> {
         let nb_msg = unsafe {
             libc::recvmmsg(
@@ -168,19 +174,32 @@ impl ReceiveMmsg {
             let nb_msg = usize::try_from(nb_msg)
                 .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("nb_msg: {e}")))?;
 
-            let buffers = self.buffers[0..nb_msg].iter().enumerate().try_fold(
-                Vec::with_capacity(nb_msg),
-                |mut res, (i, buffer)| {
-                    let msg_len = usize::try_from(self.mmsghdr[i].msg_len).map_err(|e| {
-                        io::Error::new(io::ErrorKind::InvalidData, format!("msg_len: {e}"))
-                    })?;
-                    res.push(&buffer[0..msg_len]);
-                    Ok::<_, io::Error>(res)
-                },
-            )?;
+            // Validate eagerly, as before, so a malformed `msg_len` fails the whole batch
+            // immediately rather than surfacing lazily on a later `datagram` call.
+            for hdr in &self.mmsghdr[0..nb_msg] {
+                usize::try_from(hdr.msg_len).map_err(|e| {
+                    io::Error::new(io::ErrorKind::InvalidData, format!("msg_len: {e}"))
+                })?;
+            }
 
-            Ok(ReceiveDatagrams::Multiple(buffers))
+            self.nb_msg = nb_msg;
+
+            Ok(ReceiveDatagrams::Multiple(nb_msg, marker::PhantomData))
         }
+    }
+
+    // # Panics
+    //
+    // Panics if `i >= nb_msg` for the last successful `recv` call.
+    fn datagram(&self, i: usize) -> &[u8] {
+        assert!(
+            i < self.nb_msg,
+            "datagram index {i} out of range for last recv() of {} message(s)",
+            self.nb_msg
+        );
+        let msg_len = usize::try_from(self.mmsghdr[i].msg_len)
+            .expect("msg_len already validated in recv()");
+        &self.buffers[i][0..msg_len]
     }
 }
 
@@ -242,6 +261,21 @@ impl Receive {
             Self::Msg(receiver) => receiver.recv(),
             #[cfg(feature = "receive-mmsg")]
             Self::Mmsg(receiver) => receiver.recv(),
+        }
+    }
+
+    /// Fetches the `i`-th datagram of the last [`ReceiveDatagrams::Multiple`] batch.
+    ///
+    /// # Panics
+    ///
+    /// Panics if not currently using the mmsg backend, or if `i` is out of range for the last
+    /// batch.
+    #[cfg(feature = "receive-mmsg")]
+    pub fn datagram(&self, i: usize) -> &[u8] {
+        match self {
+            Self::Mmsg(receiver) => receiver.datagram(i),
+            #[allow(unreachable_patterns)]
+            _ => unreachable!("datagram() is only valid when using the mmsg backend"),
         }
     }
 }

@@ -88,8 +88,6 @@ where
 
                     pending_start.clear();
 
-                    receiver.failed_transfers.clear();
-
                     let actives = receiver.active_transfers.clone();
                     for (client_id, client_sendq) in actives {
                         let block = protocol::Block::new(
@@ -108,6 +106,8 @@ where
                         }
                     }
                     receiver.active_transfers.clear();
+
+                    receiver.failed_transfers.clear();
                 }
 
                 continue;

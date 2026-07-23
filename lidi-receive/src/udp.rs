@@ -7,10 +7,23 @@ use std::{
     net::{self, ToSocketAddrs},
 };
 
+// Pops a drained batch sent back by reblock, falling back to a fresh, empty `Vec` if none is
+// available yet (e.g. at start-up), mirroring lidi-send's block_recycler.
+#[cfg(feature = "receive-mmsg")]
+fn take_recycled(
+    recycler: &crossbeam_channel::Receiver<Vec<raptorq::EncodingPacket>>,
+) -> Vec<raptorq::EncodingPacket> {
+    recycler.try_recv().unwrap_or_default()
+}
+
+#[allow(clippy::too_many_lines)]
 pub fn start<Lifecycle>(
     receiver: &crate::Receiver<Lifecycle>,
     port: u16,
     to_reblock: &crossbeam_channel::Sender<reblock::Message>,
+    #[cfg(feature = "receive-mmsg")] packet_vec_recycler: &crossbeam_channel::Receiver<
+        Vec<raptorq::EncodingPacket>,
+    >,
 ) -> Result<(), crate::Error>
 where
     Lifecycle: ClientLifecycle,
@@ -91,7 +104,11 @@ where
                 #[cfg(not(feature = "receive-mmsg"))]
                 to_reblock.send(reblock::Message::Packet(packet))?;
                 #[cfg(feature = "receive-mmsg")]
-                to_reblock.send(reblock::Message::Packets(vec![packet]))?;
+                {
+                    let mut packets = take_recycled(packet_vec_recycler);
+                    packets.push(packet);
+                    to_reblock.send(reblock::Message::Packets(packets))?;
+                }
             }
             #[cfg(feature = "receive-mmsg")]
             socket::ReceiveDatagrams::Multiple(nb_msg, _) => {
@@ -111,17 +128,16 @@ where
                     to_reblock.send(reblock::Message::NewSession(session_id))?;
                 }
 
-                let packets: Vec<_> = (0..nb_msg)
-                    .filter_map(|i| {
-                        let (datagram_session_id, datagram) =
-                            protocol::session_split(udp.datagram(i));
-                        if datagram_session_id == session_id {
-                            Some(raptorq::EncodingPacket::deserialize(datagram))
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
+                let mut packets = take_recycled(packet_vec_recycler);
+                packets.extend((0..nb_msg).filter_map(|i| {
+                    let (datagram_session_id, datagram) =
+                        protocol::session_split(udp.datagram(i));
+                    if datagram_session_id == session_id {
+                        Some(raptorq::EncodingPacket::deserialize(datagram))
+                    } else {
+                        None
+                    }
+                }));
                 log::trace!(
                     "UDP recv: sending {} packets to reblock queue",
                     packets.len()

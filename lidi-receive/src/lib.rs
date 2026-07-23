@@ -429,10 +429,23 @@ where
                 queues.push(for_reblock.clone());
             }
 
+            // Recycles the Vec<EncodingPacket> batches built by the udp worker: reblock sends
+            // each one back (emptied via drain) once processed, so udp can reuse it instead of
+            // allocating, the same pattern as lidi-send's block_recycler. A plain SPSC channel
+            // suffices since exactly one reblock thread and one udp thread share it per port.
+            #[cfg(feature = "receive-mmsg")]
+            let (packet_vec_recycler_tx, packet_vec_recycler_rx) =
+                crossbeam_channel::unbounded::<Vec<raptorq::EncodingPacket>>();
+
             thread::Builder::new()
                 .name(format!("reblock_{port}"))
                 .spawn_scoped(scope, move || {
-                    if let Err(e) = reblock::start(self, &for_reblock) {
+                    if let Err(e) = reblock::start(
+                        self,
+                        &for_reblock,
+                        #[cfg(feature = "receive-mmsg")]
+                        &packet_vec_recycler_tx,
+                    ) {
                         log::error!("fatal reblock error: {e}");
                     }
                 })?;
@@ -440,7 +453,13 @@ where
             thread::Builder::new()
                 .name(format!("recv_{port}"))
                 .spawn_scoped(scope, move || {
-                    if let Err(e) = udp::start(self, *port, &to_reblock) {
+                    if let Err(e) = udp::start(
+                        self,
+                        *port,
+                        &to_reblock,
+                        #[cfg(feature = "receive-mmsg")]
+                        &packet_vec_recycler_rx,
+                    ) {
                         log::error!("fatal recv_{port} error: {e}");
                     }
                 })?;

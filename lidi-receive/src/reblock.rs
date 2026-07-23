@@ -102,6 +102,11 @@ pub enum Message {
 pub fn start<Lifecycle>(
     receiver: &crate::Receiver<Lifecycle>,
     for_reblock: &crossbeam_channel::Receiver<Message>,
+    // Batches drained below are sent back here for the udp worker to reuse, mirroring
+    // lidi-send's block_recycler.
+    #[cfg(feature = "receive-mmsg")] packet_vec_recycler: &crossbeam_channel::Sender<
+        Vec<raptorq::EncodingPacket>,
+    >,
 ) -> Result<(), crate::Error>
 where
     Lifecycle: ClientLifecycle,
@@ -127,7 +132,9 @@ where
     let mut packet_vec_pool: Vec<Vec<raptorq::EncodingPacket>> = Vec::new();
 
     loop {
-        let packets = match for_reblock.recv_timeout(receiver.config.reset_timeout) {
+        // Only mutated (via `drain`) when receive-mmsg is enabled, to reclaim the Vec below.
+        #[cfg_attr(not(feature = "receive-mmsg"), allow(unused_mut))]
+        let mut packets = match for_reblock.recv_timeout(receiver.config.reset_timeout) {
             Err(crossbeam_channel::RecvTimeoutError::Timeout) => {
                 if !reset {
                     log::debug!("reset timeout reached, flushing");
@@ -205,7 +212,7 @@ where
 
         let block_id_for_fast_track = cur_id.wrapping_add(WINDOW_WIDTH);
 
-        for packet in packets {
+        let mut distribute = |packet: raptorq::EncodingPacket| {
             let id = packet.payload_id().source_block_number();
 
             if id == block_id_for_fast_track {
@@ -219,7 +226,26 @@ where
             } else {
                 blocks[id as usize].packets.push(packet);
             }
+        };
+
+        // Non-mmsg: `packets` is a stack array, consumed by value. Mmsg: `packets` is a `Vec`,
+        // drained rather than consumed so the emptied allocation can be sent back to
+        // `packet_vec_recycler` below for the udp worker to reuse. Either way `packet_iter`
+        // yields owned `EncodingPacket`s, so the distribution loop itself is written once.
+        #[cfg(not(feature = "receive-mmsg"))]
+        let packet_iter = packets.into_iter();
+        #[cfg(feature = "receive-mmsg")]
+        #[allow(clippy::iter_with_drain)]
+        let packet_iter = packets.drain(..);
+
+        for packet in packet_iter {
+            distribute(packet);
         }
+
+        #[cfg(feature = "receive-mmsg")]
+        // Ignore the error: if the udp thread's receiver is gone, there's nothing to recycle
+        // into and the `Vec` is simply dropped.
+        let _ = packet_vec_recycler.send(packets);
 
         if fast_track {
             log::warn!("probable network interrupt, fast track first block");

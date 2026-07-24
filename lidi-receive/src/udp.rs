@@ -133,8 +133,7 @@ where
 
                 let mut packets = take_recycled(packet_vec_recycler);
                 packets.extend((0..nb_msg).filter_map(|i| {
-                    let (datagram_session_id, datagram) =
-                        protocol::session_split(udp.datagram(i));
+                    let (datagram_session_id, datagram) = protocol::session_split(udp.datagram(i));
                     if datagram_session_id == session_id {
                         Some(raptorq::EncodingPacket::deserialize(datagram))
                     } else {

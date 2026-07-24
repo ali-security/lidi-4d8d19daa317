@@ -1,7 +1,7 @@
 use lidi_command_utils::{config, socket};
+use std::{io, net, os::fd::AsRawFd};
 #[cfg(feature = "receive-mmsg")]
 use std::{marker, ptr};
-use std::{io, net, os::fd::AsRawFd};
 #[cfg(any(feature = "receive-msg", feature = "receive-mmsg"))]
 use std::{mem, pin};
 
@@ -197,8 +197,8 @@ impl ReceiveMmsg {
             "datagram index {i} out of range for last recv() of {} message(s)",
             self.nb_msg
         );
-        let msg_len = usize::try_from(self.mmsghdr[i].msg_len)
-            .expect("msg_len already validated in recv()");
+        let msg_len =
+            usize::try_from(self.mmsghdr[i].msg_len).expect("msg_len already validated in recv()");
         &self.buffers[i][0..msg_len]
     }
 }

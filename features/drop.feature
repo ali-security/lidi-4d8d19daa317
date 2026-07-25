@@ -38,4 +38,4 @@ Feature: Send simple files with network drop
     And lidi is started with max throughput of 100mbit
     When lidi-file-send file A of size 100KB
     Then wait 3 seconds
-    And the receiver Prometheus counter lidi_receive_blocks_decode_failed is greater than or equal to 1
+    And the receiver Prometheus counter lidi_receive_blocks_lost is greater than or equal to 1

@@ -242,6 +242,10 @@ where
 {
     config: Config,
     raptorq: protocol::RaptorQ,
+    // Batches drained below are sent back here for the udp worker to reuse, mirroring
+    // lidi-send's block_recycler.
+    #[cfg(feature = "receive-mmsg")]
+    packet_vec_recycler: crossbeam_deque::Injector<Vec<raptorq::EncodingPacket>>,
     to_dispatch: crossbeam_channel::Sender<dispatch::Message>,
     for_dispatch: crossbeam_channel::Receiver<dispatch::Message>,
     to_clients: crossbeam_channel::Sender<(
@@ -354,6 +358,9 @@ where
     ) -> Result<Self, Error> {
         let config = Config::from(config);
 
+        #[cfg(feature = "receive-mmsg")]
+        let packet_vec_recycler = crossbeam_deque::Injector::new();
+
         let (to_dispatch, for_dispatch) = match config.dispatch_queue_size {
             0 => crossbeam_channel::unbounded(),
             n => crossbeam_channel::bounded(n),
@@ -366,6 +373,8 @@ where
         Ok(Self {
             config,
             raptorq,
+            #[cfg(feature = "receive-mmsg")]
+            packet_vec_recycler,
             to_dispatch,
             for_dispatch,
             to_clients,
@@ -473,23 +482,10 @@ where
                 queues.push(for_reblock.clone());
             }
 
-            // Recycles the Vec<EncodingPacket> batches built by the udp worker: reblock sends
-            // each one back (emptied via drain) once processed, so udp can reuse it instead of
-            // allocating, the same pattern as lidi-send's block_recycler. A plain SPSC channel
-            // suffices since exactly one reblock thread and one udp thread share it per port.
-            #[cfg(feature = "receive-mmsg")]
-            let (packet_vec_recycler_tx, packet_vec_recycler_rx) =
-                crossbeam_channel::unbounded::<Vec<raptorq::EncodingPacket>>();
-
             thread::Builder::new()
                 .name(format!("reblock_{port}"))
                 .spawn_scoped(scope, move || {
-                    if let Err(e) = reblock::start(
-                        self,
-                        &for_reblock,
-                        #[cfg(feature = "receive-mmsg")]
-                        &packet_vec_recycler_tx,
-                    ) {
+                    if let Err(e) = reblock::start(self, &for_reblock) {
                         log::error!("fatal reblock error: {e}");
                     }
                 })?;
@@ -497,13 +493,7 @@ where
             thread::Builder::new()
                 .name(format!("recv_{port}"))
                 .spawn_scoped(scope, move || {
-                    if let Err(e) = udp::start(
-                        self,
-                        *port,
-                        &to_reblock,
-                        #[cfg(feature = "receive-mmsg")]
-                        &packet_vec_recycler_rx,
-                    ) {
+                    if let Err(e) = udp::start(self, *port, &to_reblock) {
                         log::error!("fatal recv_{port} error: {e}");
                     }
                 })?;

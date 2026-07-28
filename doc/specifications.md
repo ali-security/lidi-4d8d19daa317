@@ -189,7 +189,7 @@ Example: `tcp[hash=true]:127.0.0.1:4000`
 
 ## 10. File transfer (lidi-file-send / lidi-file-receive)
 
-**Description:** `lidi-file-send` sends a single file through `lidi-send`; `lidi-file-receive` receives it from `lidi-receive`. A minimal application-level protocol encodes the filename and file size at the start of the transfer.
+**Description:** `lidi-file-send` sends a single file or directory through `lidi-send`; `lidi-file-receive` receives it from `lidi-receive`. A minimal application-level protocol encodes the filename and file size at the start of the transfer. Sending a directory preserves its exact structure.
 
 **Components:** `lidi-clients/src/file/`
 
@@ -202,7 +202,7 @@ Example: `tcp[hash=true]:127.0.0.1:4000`
 
 ## 11. Directory watching (lidi-dir-send)
 
-**Description:** `lidi-dir-send` watches a directory using inotify and automatically sends newly appearing files via `lidi-send`. Files already present in the directory when the tool starts are also sent.
+**Description:** `lidi-dir-send` with the `--watch` flag watches a directory using inotify and automatically sends newly appearing files via `lidi-send`. Files already present in the directory when the tool starts are also sent. Depending on the configuration, whole directories can also be sent.
 
 **Components:** `lidi-clients/` (feature `inotify`)
 
@@ -211,6 +211,8 @@ Example: `tcp[hash=true]:127.0.0.1:4000`
 - Files present at startup are sent before watching for new events
 - Exclusion patterns (regex) are supported via `--ignore`
 - `--max-files` option limits the number of concurrent file transfers
+- `--recursive` sends all the files found recursively in the subdirectories, instead of sending all top-level files or directories.
+- `--static` makes the watch non-dynamic: new subdirectories will be sent instead of watched.
 
 **Compilation feature:** `inotify`
 

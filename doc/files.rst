@@ -8,6 +8,9 @@ On top of the raw stream diode (``lidi-send`` / ``lidi-receive``), lidi provides
 Sending a file
 --------------
 
+lidi-file-send can actually send files or directories. Sending directories with lidi-file-send instead of using lidi-dir-send is useful if you want to keep the exact structure of the directory (including empty directories), and to be able to detect the end of the transfer (with the ``--tmp-dir`` flag on lidi-file-receive).
+
+
 .. code-block:: none
 
    Send a file to lidi-file-receive through lidi.
@@ -50,6 +53,10 @@ Sending a directory
 
 ``lidi-dir-send`` sends every file of a directory. Files are received on the other side by the same ``lidi-file-receive`` binary.
 
+Depending on the ``--recurse`` configuration, it either recurses in subdirectories to send each file one by one, or send each first-level entries (file or directory) as a whole. Sending whole directories is useful if you want to keep the exact structure of the directory (including empty directories, and file whose name matches the ignore pattern), and to be able to detect the end of the transfer (using the ``--tmp-dir`` flag on lidi-file-receive).
+
+The ``--watch`` mode keeps lidi-dir-send running after sending the content, to watch for new files or directories. When a new file is detected, it is automatically sent. When a new directory is detected, it is either recursively watched for new files inside or sent as a directory, depending on the ``--static`` flag.
+
 .. code-block:: none
 
    Send a directory to lidi-file-receive through lidi.
@@ -82,6 +89,8 @@ Sending a directory
              Recurse in given directory
          --watch
              Watch for new files
+         --static
+             Only watch directories already created at the start. New directories will be sent instead of watched.
          --delete
              Delete files after sending
          (plus the same --tls-* options as lidi-file-send)

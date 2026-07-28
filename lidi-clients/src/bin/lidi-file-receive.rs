@@ -116,6 +116,7 @@ fn main() {
         recursive: false,
         watch: false,
         tls: args.tls,
+        delete: false,
     };
 
     let output_directory = if args.chroot {

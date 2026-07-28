@@ -3344,3 +3344,28 @@ def step_tls12_rejected(context, port):
     output = (result.stdout + result.stderr).decode('utf-8', errors='ignore')
     assert any(kw in output.lower() for kw in ['alert', 'handshake failure', 'error', 'protocol']), \
         f'Expected TLS 1.2 to be rejected, but output was:\n{output}'
+
+
+# ---------------------------------------------------------------------------
+# lidi-send-file --overwrite/--delete options test
+# ---------------------------------------------------------------------------
+
+@given('lidi-receive-file is configured to overwrite files')
+def step_configure_receive_file_overwrite(context):
+    """Configure lidi-receive-file to overwrite files"""
+    context.receive_file_overwrite = True
+
+@given('lidi-dir-send is started with watch and delete')
+def step_lidi_send_dir_with_delete_sent_files(context):
+    start_lidi_send_dir(context, watch=True, delete=True)
+
+@then('file {file} does not exist in input directory')
+def step_file_not_exist_in_input_dir(context, file):
+    if os.path.exists(os.path.join(context.send_dir, file)):
+        raise Exception(f"file {file} exists in input directory")
+
+@then('the receiver log contains no "already exists" error')
+def step_receiver_log_no_already_exists_error(context):
+    time.sleep(1)
+    if 'already exists' in _read_receiver_log(context):
+        raise Exception("Unexpected 'already exists' error found in receiver log")

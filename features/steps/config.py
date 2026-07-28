@@ -251,9 +251,12 @@ def build_lidi_receive_file_command(context):
     receive_dir = getattr(context, 'receive_dir_override', None) or context.receive_dir
     lidi_receive_file_command.append(receive_dir)
 
+    if getattr(context, 'receive_file_overwrite', False):
+        lidi_receive_file_command.append('--overwrite')
+
     return lidi_receive_file_command
 
-def build_lidi_send_dir_command(context, watch, ignore, bin_dir=None):
+def build_lidi_send_dir_command(context, watch, ignore, bin_dir=None, delete=False):
     if bin_dir is None:
         bin_dir = context.bin_dir
 
@@ -268,6 +271,9 @@ def build_lidi_send_dir_command(context, watch, ignore, bin_dir=None):
     
     if ignore is not None:
         lidi_send_dir_command += ['--ignore', ignore]
+
+    if delete:
+        lidi_send_dir_command += ['--delete']
         
     lidi_send_dir_command += [context.send_dir]
     

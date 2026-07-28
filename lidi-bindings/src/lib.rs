@@ -42,6 +42,7 @@ pub unsafe extern "C" fn diode_new_config(
         ignore: None,
         recursive: false,
         watch: false,
+        delete: false,
         tls: lidi_clients::Tls::default(),
     });
     Box::into_raw(config)
@@ -131,6 +132,7 @@ pub unsafe extern "C" fn diode_receive_files(
         ignore: None,
         recursive: false,
         watch: false,
+        delete: config.delete,
         tls: config.tls.clone(),
     };
 

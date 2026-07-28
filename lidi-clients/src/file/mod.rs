@@ -37,6 +37,7 @@ pub struct Config<D> {
     pub watch: bool,
     /// TLS material for `tls:` connections.
     pub tls: crate::Tls,
+    pub delete: bool,
 }
 
 /// Errors returned by the file transfer client.

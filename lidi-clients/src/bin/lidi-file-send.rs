@@ -49,6 +49,8 @@ struct Args {
     #[cfg(feature = "hash")]
     #[clap(long, help = "Compute and send the hash of file content")]
     hash: bool,
+    #[clap(long, help = "Delete files after sending")]
+    delete: bool,
     #[clap(flatten)]
     tls: lidi_clients::Tls,
     #[clap(help = "Files to send")]
@@ -97,6 +99,7 @@ fn main() {
         recursive: false,
         watch: false,
         tls: args.tls,
+        delete: args.delete,
     };
 
     if let Err(e) = lidi_clients::file::send::send_files(&config, args.files, None) {

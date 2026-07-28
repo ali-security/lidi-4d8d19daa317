@@ -231,9 +231,9 @@ def stop_throttled_diode(context):
         context.tc_shaper.teardown()
         context.tc_shaper = None
 
-def start_lidi_send_dir(context, watch=False, ignore=None, bin_dir=None):
+def start_lidi_send_dir(context, watch=False, ignore=None, bin_dir=None, delete=False):
     """Start the lidi send directory process."""
-    lidi_send_dir_command = build_lidi_send_dir_command(context, watch, ignore, bin_dir)
+    lidi_send_dir_command = build_lidi_send_dir_command(context, watch, ignore, bin_dir, delete)
 
     # Start lidi-dir-send
     context.proc_lidi_send_dir = subprocess.Popen(

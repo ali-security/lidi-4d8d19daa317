@@ -64,6 +64,8 @@ struct Args {
     recursive: bool,
     #[clap(long, help = "Watch for new files")]
     watch: bool,
+    #[clap(long, help = "Delete files after sending")]
+    delete: bool,
     #[clap(help = "Directory containing files to send")]
     dir: path::PathBuf,
 }
@@ -110,6 +112,7 @@ fn main() {
         recursive: args.recursive,
         watch: args.watch,
         tls: args.tls,
+        delete: args.delete,
     };
 
     if let Err(e) = lidi_clients::file::send::send_dir(&config, args.dir.as_path()) {

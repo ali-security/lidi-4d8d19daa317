@@ -356,7 +356,7 @@ pub fn send_file(
 ) -> Result<usize, file::Error> {
     log::debug!("connecting to {}", config.diode);
 
-    match &config.diode {
+    let res = match &config.diode {
         crate::DiodeSend::Tcp(socket_addr) => {
             #[cfg(not(feature = "tcp"))]
             {
@@ -397,7 +397,15 @@ pub fn send_file(
                 send_file_aux(config, diode, path, base_dir)
             }
         }
+    }?;
+
+    if config.delete {
+        if let Err(e) = fs::remove_file(path) {
+            log::error!("failed to delete file {}: {e}", path.display());
+        }
     }
+
+    Ok(res)
 }
 
 fn send_file_aux<D>(

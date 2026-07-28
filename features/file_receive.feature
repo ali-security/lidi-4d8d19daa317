@@ -60,12 +60,12 @@ Feature: lidi-file-receive behaviour (receiver-side edge cases)
     # for_clients.recv() and is ready for the next transfer. lidi-receive stays running.
     #
     # Root cause (lidi-clients/src/file/receive.rs):
-    #   Without --use-tmp-file, receive_file() opens the final output file directly with
+    #   Without --tmp-dir, receive_file() opens the final output file directly with
     #   OpenOptions::create(true).truncate(true) as soon as the header is received. When
     #   lidi-file-receive is killed (SIGKILL), the OS closes the TCP socket;
     #   receive_file() returns Err(InvalidFileSize) and the partial (possibly 0-byte)
     #   output file is left in place under its final name.
-    # Fix: use --use-tmp-file to write atomically via a temporary file. See T-FRC-B1-FIXED.
+    # Fix: use --tmp-dir to write in a temporary directory. See T-FRC-B1-FIXED.
     Given lidi is started with max_clients set to 1 and limited to 4mbit
     When client 1 starts sending "input_1m" of size 1MB
     And lidi-file-receive is killed after 1 seconds
@@ -74,13 +74,12 @@ Feature: lidi-file-receive behaviour (receiver-side edge cases)
     # Demonstrates the defect: a partial "input_1m" is left under its final name
     And file "input_1m" of size 1MB should remain on disk as an incomplete file
 
-  Scenario: T-FRC-B1-FIXED — kill lidi-file-receive mid-transfer with --use-tmp-file (atomic write)
-    # Same as T-FRC-B1 but with --use-tmp-file enabled. Content is written to a uniquely
-    # named temporary file (via tempfile::NamedTempFile) and persisted atomically on
-    # success. If the process is killed mid-transfer, "input_1m" never exists in a
-    # partial state — only the orphaned .tmp file remains (cleaned up automatically on
-    # the next lidi-file-receive startup), which is harmless.
-    Given lidi-file-receive uses atomic tmp file writes
+  Scenario: T-FRC-B1-FIXED — kill lidi-file-receive mid-transfer with --tmp-dir (atomic write)
+    # Same as T-FRC-B1 but with --tmp-dir enabled. Content is written to a temp
+    # dir and moved atomically to the output dir on success. If the process is
+    # killed mid-transfer, "input_1m" never exists in a partial state in the
+    # output dir, only in the temp dir.
+    Given lidi-file-receive uses a temporary directory
     And lidi is started with max_clients set to 1 and limited to 4mbit
     When client 1 starts sending "input_1m" of size 1MB
     And lidi-file-receive is killed after 1 seconds

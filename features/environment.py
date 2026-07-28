@@ -75,12 +75,13 @@ def before_scenario(context, _feature):
 
     # Use explicit, static paths for directories
     context.send_dir = os.path.join(context.base_dir, "send")
+    context.tmp_dir = os.path.join(context.base_dir, "tmp")
     context.send_ratelimit_dir = None
     context.receive_dir = os.path.join(context.base_dir, "receive")
     context.log_dir = os.path.join(context.base_dir, "log")
     
     # Clean up directories from previous test
-    for directory in [context.send_dir, context.receive_dir, context.log_dir]:
+    for directory in [context.send_dir, context.tmp_dir, context.receive_dir, context.log_dir]:
         try:
             if os.path.isdir(directory):
                 import shutil
@@ -90,6 +91,7 @@ def before_scenario(context, _feature):
     
     # Create directories if they don't exist
     os.makedirs(context.send_dir, exist_ok=True)
+    os.makedirs(context.tmp_dir, exist_ok=True)
     os.makedirs(context.receive_dir, exist_ok=True)
     os.makedirs(context.log_dir, exist_ok=True)
 

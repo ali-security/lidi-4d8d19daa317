@@ -5,6 +5,7 @@ import signal
 import subprocess
 import threading
 import time
+from platform import system
 
 from behave import given, when, then, use_step_matcher
 from features.steps.file import parse_human_size
@@ -42,10 +43,10 @@ def step_start_file_receive_max_files(context, n):
     start_lidi_file_receive(context)
 
 
-@given('lidi-file-receive uses atomic tmp file writes')
-def step_use_tmp_file_writes(context):
-    """Enable --use-tmp-file flag for atomic file writes."""
-    context.use_tmp_file = True
+@given('lidi-file-receive uses a temporary directory')
+def step_use_tmp_dir(context):
+    """Enable --tmp-dir <DIR> flag"""
+    context.use_tmp_dir = True
 
 
 @given('lidi-receive is configured with queue_size of {n:d}')
@@ -150,7 +151,7 @@ def step_lidi_receive_still_running(context):
 def step_partial_file_remains(context, name, size):
     """Verify a partial file was left on disk under its final name (T-FRC-B1 defect).
 
-    Without --use-tmp-file, receive_file() opens the destination file with
+    Without --tmp-dir, receive_file() opens the destination file with
     create(true)+truncate(true) before any data arrives, so a SIGKILL of
     lidi-file-receive mid-transfer leaves a truncated file in place.
     """

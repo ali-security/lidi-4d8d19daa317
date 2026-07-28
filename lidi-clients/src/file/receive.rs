@@ -14,21 +14,6 @@ use std::{
     path, thread,
 };
 
-#[cfg(feature = "tmp-file")]
-fn cleanup_tmp_files(output_dir: &path::Path) {
-    if let Ok(entries) = fs::read_dir(output_dir) {
-        for entry in entries.flatten() {
-            let entry_path = entry.path();
-            if entry_path.extension().is_some_and(|ext| ext == "tmp") {
-                match fs::remove_file(&entry_path) {
-                    Ok(()) => log::info!("cleaned up orphaned tmp file: {}", entry_path.display()),
-                    Err(e) => log::warn!("failed to remove tmp file {}: {e}", entry_path.display()),
-                }
-            }
-        }
-    }
-}
-
 /// # Errors
 ///
 /// Will return `Err` if `output_dir` is not a directory.
@@ -40,11 +25,6 @@ pub fn receive_files(
         return Err(file::Error::Other(String::from(
             "output_directory is not a directory",
         )));
-    }
-
-    #[cfg(feature = "tmp-file")]
-    if config.use_tmp_file {
-        cleanup_tmp_files(output_dir);
     }
 
     thread::scope(|scope| -> Result<(), file::Error> {
@@ -159,6 +139,61 @@ fn receive_unix_loop<'a>(
     }
 }
 
+fn get_writing_path(
+    config: &file::Config<crate::DiodeReceive>,
+    output_dir: &path::Path,
+    relative_path: &path::Path,
+) -> Result<path::PathBuf, file::Error> {
+    // Create in the tmp dir if configured, else directly in the output dir
+    let base_dir = config
+        .tmp_dir
+        .as_ref()
+        .map_or(output_dir, |tmp_dir| tmp_dir);
+    let tmp_path = base_dir.join(relative_path);
+    // We want to overwrite files in the temp dir even if config.overwrite == false
+    let overwrite = config.overwrite || config.tmp_dir.is_some();
+    check_overwrite(&tmp_path, overwrite)?;
+    Ok(tmp_path)
+}
+
+fn move_to_final_path(
+    config: &file::Config<crate::DiodeReceive>,
+    tmp_path: &path::Path,
+    output_dir: &path::Path,
+    relative_path: &path::Path,
+) -> Result<path::PathBuf, file::Error> {
+    // move from tmp dir to output dir if configured as so
+    if config.tmp_dir.is_some() {
+        let final_dest = output_dir.join(relative_path);
+        check_overwrite(&final_dest, config.overwrite)?;
+        fs::rename(tmp_path, &final_dest)?;
+        return Ok(final_dest);
+    }
+    Ok(tmp_path.to_owned())
+}
+
+fn check_overwrite(path: &path::Path, overwrite: bool) -> Result<(), file::Error> {
+    if !fs::exists(path)? {
+        // dest does not exist -> create parent dir if necessary
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        return Ok(());
+    }
+
+    // dest exists -> error or delete depending on the configuration
+    if overwrite {
+        log::info!("overwriting \"{}\"", path.display());
+        fs::remove_file(path)?;
+        Ok(())
+    } else {
+        Err(file::Error::Other(format!(
+            "\"{}\" already exists",
+            path.display()
+        )))
+    }
+}
+
 fn receive_file<D>(
     config: &file::Config<crate::DiodeReceive>,
     mut diode: D,
@@ -168,100 +203,39 @@ where
     D: Read + Write,
 {
     let header = file::protocol::Header::deserialize_from(&mut diode)?;
+    let relative_path = path::PathBuf::from_iter(&header.file_path);
 
-    let file_path = path::PathBuf::from_iter(&header.file_path);
-    let file_path = output_dir.join(file_path);
+    let tmp_path = get_writing_path(config, output_dir, &relative_path)?;
 
     log::info!(
-        "receiving file {} ({} bytes)",
-        file_path.display(),
+        "receiving file \"{}\" ({} bytes)",
+        output_dir.join(&relative_path).display(),
         header.file_length
     );
-
-    if !config.overwrite && file_path.exists() {
-        return Err(file::Error::Other(format!(
-            "file {} already exists",
-            file_path.display()
-        )));
-    }
-
-    if let Some(parent) = file_path.parent()
-        && !parent.exists()
-    {
-        fs::create_dir_all(parent)?;
-    }
-
-    #[cfg(feature = "tmp-file")]
-    if config.use_tmp_file {
-        return receive_file_via_tmp_file(&mut diode, &header, config, &file_path);
-    }
 
     let mut file = fs::OpenOptions::new()
         .read(false)
         .write(true)
         .create(true)
         .truncate(true)
-        .open(&file_path)?;
+        .open(&tmp_path)?;
 
     log::debug!("setting mode to {}", header.mode);
     file.set_permissions(fs::Permissions::from_mode(header.mode))?;
 
-    match write_file_content(&mut diode, &mut file, &header, config) {
-        Ok(received) => Ok(received),
-        Err(e) => {
-            // The transfer was incomplete or invalid (e.g. the sending client was
-            // killed mid-transfer): remove the partially written file so it does
-            // not get mistaken for a successfully received one.
-            if let Err(remove_err) = fs::remove_file(&file_path) {
+    write_file_content(&mut diode, &mut file, &header, config)
+        .and_then(|size| {
+            move_to_final_path(config, &tmp_path, output_dir, &relative_path)?;
+            Ok(size)
+        })
+        .inspect_err(|_| {
+            if let Err(remove_err) = fs::remove_file(&tmp_path) {
                 log::warn!(
                     "failed to remove incomplete file {}: {remove_err}",
-                    file_path.display()
+                    tmp_path.display()
                 );
             }
-            Err(e)
-        }
-    }
-}
-
-/// Writes the file content to a uniquely-named temporary file in the same
-/// directory as `file_path`, then atomically renames it into place. If
-/// writing fails, the temporary file is automatically removed on drop.
-#[cfg(feature = "tmp-file")]
-fn receive_file_via_tmp_file<D>(
-    diode: &mut D,
-    header: &file::protocol::Header,
-    config: &file::Config<crate::DiodeReceive>,
-    file_path: &path::Path,
-) -> Result<usize, file::Error>
-where
-    D: Read + Write,
-{
-    let dir = file_path.parent().unwrap_or_else(|| path::Path::new("."));
-    let file_name = file_path
-        .file_name()
-        .ok_or_else(|| file::Error::Other(format!("invalid file path {}", file_path.display())))?;
-
-    let mut tmp = tempfile::Builder::new()
-        .prefix(file_name)
-        .suffix(".tmp")
-        .tempfile_in(dir)?;
-
-    log::debug!("setting mode to {}", header.mode);
-    tmp.as_file()
-        .set_permissions(fs::Permissions::from_mode(header.mode))?;
-
-    let received = write_file_content(diode, tmp.as_file_mut(), header, config)?;
-
-    tmp.as_file().sync_all()?;
-    let tmp_path = tmp.path().to_path_buf();
-    tmp.persist(file_path).map_err(|e| e.error)?;
-    log::debug!(
-        "atomically persisted {} to {}",
-        tmp_path.display(),
-        file_path.display()
-    );
-
-    Ok(received)
+        })
 }
 
 fn write_file_content<D>(

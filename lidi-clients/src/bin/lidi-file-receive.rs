@@ -29,12 +29,14 @@ struct Listeners {
 struct WriteOptions {
     #[clap(long, help = "Overwrite existing files")]
     overwrite: bool,
-    #[cfg(feature = "tmp-file")]
     #[clap(
         long,
-        help = "Write to .tmp file and rename atomically (prevents partial files on crash)"
+        help = "Directory where to store files during their transfer.",
+        long_help = "Directory where to store files during their transfer, before being moved to the
+output directory. Allows to detect the end of file transfers without using
+inotify, and to avoid having incomplete files in the output directory."
     )]
-    use_tmp_file: bool,
+    tmp_dir: Option<path::PathBuf>,
 }
 
 #[derive(Parser)]
@@ -110,8 +112,7 @@ fn main() {
         hash: args.hash,
         max_files: args.max_files,
         overwrite: args.write_options.overwrite,
-        #[cfg(feature = "tmp-file")]
-        use_tmp_file: args.write_options.use_tmp_file,
+        tmp_dir: args.write_options.tmp_dir,
         ignore: None,
         recursive: false,
         watch: false,

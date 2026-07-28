@@ -237,8 +237,8 @@ def build_lidi_receive_file_command(context):
     if getattr(context, 'hash_receive', False):
         lidi_receive_file_command.append('--hash')
 
-    if getattr(context, 'use_tmp_file', False):
-        lidi_receive_file_command.append('--use-tmp-file')
+    if getattr(context, 'use_tmp_dir', False):
+        lidi_receive_file_command.extend(['--tmp-dir', context.tmp_dir])
 
     receive_buffer_size = getattr(context, 'receive_file_buffer_size', None)
     if receive_buffer_size is not None:

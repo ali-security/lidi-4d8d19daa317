@@ -2,7 +2,7 @@
 
 #[cfg(feature = "tls")]
 use crate::tls;
-use std::{fmt, io, num};
+use std::{fmt, io, num, path};
 
 /// On-the-wire framing of the file transfer protocol.
 pub mod protocol;
@@ -26,9 +26,8 @@ pub struct Config<D> {
     pub max_files: usize,
     /// Overwrite existing files (receiving side).
     pub overwrite: bool,
-    /// Write to a temporary file and rename atomically on completion (receiving side).
-    #[cfg(feature = "tmp-file")]
-    pub use_tmp_file: bool,
+    /// Write to a temporary directory and move files on completion (receiving side).
+    pub tmp_dir: Option<path::PathBuf>,
     /// Regex of file names to ignore (directory sending).
     pub ignore: Option<regex::Regex>,
     /// Recurse into sub-directories (directory sending).

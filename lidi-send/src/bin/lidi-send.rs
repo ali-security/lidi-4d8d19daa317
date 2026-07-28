@@ -334,8 +334,13 @@ fn main() {
                     }
                     #[cfg(feature = "from-unix")]
                     {
-                        if path.exists() {
-                            log::error!("Unix socket path '{}' already exists", path.display());
+                        if path.exists()
+                            && let Err(e) = std::fs::remove_file(&path)
+                        {
+                            log::error!(
+                                "Unix socket path '{}' already exists and cannot be deleted: {e}",
+                                path.display()
+                            );
                             return;
                         }
 

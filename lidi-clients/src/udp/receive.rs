@@ -118,9 +118,11 @@ pub fn receive(
 
     #[cfg(feature = "unix")]
     if let Some(from_unix) = &config.diode.from_unix {
-        if from_unix.exists() {
+        if from_unix.exists()
+            && let Err(e) = std::fs::remove_file(from_unix)
+        {
             return Err(udp::Error::Other(format!(
-                "Unix socket path '{}' already exists",
+                "Unix socket path '{}' already exists and cannot be deleted: {e}",
                 from_unix.display()
             )));
         }

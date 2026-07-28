@@ -119,8 +119,10 @@ Receiving files
              Exits after receiving max_files files [default: 0]
          --overwrite
              Overwrite existing files
-         --use-tmp-file
-             Write to .tmp file and rename atomically (prevents partial files on crash)
+         --tmp-dir <directory>
+             Directory where to store files during their transfer, before being moved to the
+             output directory. Allows to detect the end of file transfers without using
+             inotify, and to avoid having incomplete files in the output directory.
          --chroot
              Chroot in output directory before receiving files
          (plus the same --tls-* options as lidi-file-send)

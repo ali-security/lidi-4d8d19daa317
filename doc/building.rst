@@ -157,8 +157,6 @@ These features apply to the file, directory and UDP-tunnel client utilities.
   periodically re-scanning the directory tree.
 - ``log4rs`` *(default)* — support a `log4rs` YAML logging configuration file
   (``--log-config``).
-- ``tmp-file`` *(default)* — write received files to a temporary file and rename
-  it atomically on completion (``lidi-file-receive --use-tmp-file``).
 
 At least one of ``tcp``, ``tls`` or ``unix`` must be enabled.
 
@@ -170,7 +168,6 @@ forward to the corresponding ``lidi-clients`` features:
 
 - ``hash`` *(default)* — forwards to ``lidi-clients/hash``.
 - ``inotify`` *(default)* — forwards to ``lidi-clients/inotify``.
-- ``tmp-file`` *(default)* — forwards to ``lidi-clients/tmp-file``.
 
 Internal library features (``lidi-command-utils``)
 --------------------------------------------------

@@ -256,7 +256,14 @@ def build_lidi_receive_file_command(context):
 
     return lidi_receive_file_command
 
-def build_lidi_send_dir_command(context, watch, ignore, bin_dir=None, delete=False):
+
+def build_lidi_send_dir_command(context,
+                                watch,
+                                ignore,
+                                bin_dir=None,
+                                delete=False,
+                                recursive=False,
+                                static=False):
     if bin_dir is None:
         bin_dir = context.bin_dir
 
@@ -274,7 +281,13 @@ def build_lidi_send_dir_command(context, watch, ignore, bin_dir=None, delete=Fal
 
     if delete:
         lidi_send_dir_command += ['--delete']
-        
+
+    if recursive:
+        lidi_send_dir_command += ['--recursive']
+
+    if static:
+        lidi_send_dir_command += ['--static']
+
     lidi_send_dir_command += [context.send_dir]
     
     return lidi_send_dir_command

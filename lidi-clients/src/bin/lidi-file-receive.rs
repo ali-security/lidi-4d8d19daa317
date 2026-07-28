@@ -116,6 +116,7 @@ fn main() {
         ignore: None,
         recursive: false,
         watch: false,
+        static_watch: false,
         tls: args.tls,
         delete: false,
     };

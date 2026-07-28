@@ -27,6 +27,7 @@ struct Clients {
 
 #[derive(Parser)]
 #[clap(about = "Send a directory to lidi-file-receive through lidi.")]
+#[allow(clippy::struct_excessive_bools)]
 struct Args {
     #[clap(
         default_value = "Info",
@@ -60,10 +61,20 @@ struct Args {
     tls: lidi_clients::Tls,
     #[clap(long, help = "Regex of file names to ignore")]
     ignore: Option<regex::Regex>,
-    #[clap(long, help = "Recurse in given directory")]
+    #[clap(
+        long,
+        help = "Recurse in given directory. If false, send each top-level directory all at 
+once. If true, recurse and send files as they are found."
+    )]
     recursive: bool,
     #[clap(long, help = "Watch for new files")]
     watch: bool,
+    #[clap(
+        long = "static",
+        help = "Only watch directories already created at the start. New directories will be sent instead of watched.",
+        requires = "watch"
+    )]
+    static_watch: bool,
     #[clap(long, help = "Delete files after sending")]
     delete: bool,
     #[clap(help = "Directory containing files to send")]
@@ -110,6 +121,7 @@ fn main() {
         ignore: args.ignore,
         recursive: args.recursive,
         watch: args.watch,
+        static_watch: args.static_watch,
         tls: args.tls,
         delete: args.delete,
     };

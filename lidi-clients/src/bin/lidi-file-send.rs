@@ -99,6 +99,7 @@ fn main() {
         watch: false,
         tls: args.tls,
         delete: args.delete,
+        static_watch: false,
     };
 
     if let Err(e) = lidi_clients::file::send::send_files(&config, args.files, None) {

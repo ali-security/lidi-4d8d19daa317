@@ -1,4 +1,4 @@
-use crate::file;
+use crate::file::{self, EntryType};
 #[cfg(feature = "hash")]
 use crate::hash;
 #[cfg(feature = "tls")]
@@ -24,167 +24,159 @@ use std::time::Duration;
 #[cfg(not(feature = "inotify"))]
 const POLL_INTERVAL: Duration = Duration::from_secs(1);
 
+#[derive(PartialEq, Eq)]
+enum DirBehaviour {
+    Enter,
+    Skip,
+}
+
+fn walk_dir<F>(dir: path::PathBuf, recursive: bool, mut f: F) -> Result<(), file::Error>
+where
+    F: FnMut(&path::Path, &fs::Metadata) -> Result<DirBehaviour, file::Error>,
+{
+    let mut todo = collections::VecDeque::new();
+    todo.push_back(dir);
+
+    while let Some(dir) = todo.pop_front() {
+        for (path, metadata) in dir.read_dir()?.filter_map(|entry| {
+            entry
+                .and_then(|e| Ok((e.path(), e.metadata()?)))
+                .inspect_err(|e| log::error!("failed to read entry: {e}"))
+                .ok()
+        }) {
+            let behaviour = f(&path, &metadata)?;
+            if recursive && metadata.file_type().is_dir() && behaviour == DirBehaviour::Enter {
+                todo.push_back(path);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn should_ignore(ignore: Option<&regex::Regex>, path: &path::Path) -> bool {
+    if let Some(ignore) = ignore
+        && let Some(file_name) = path.file_name().and_then(|name| name.to_str())
+        && ignore.is_match(file_name)
+    {
+        true
+    } else {
+        false
+    }
+}
+
 #[cfg(feature = "inotify")]
 fn notifier_new_dir(
     dir: path::PathBuf,
+    config: &file::Config<crate::DiodeSend>,
     inotify: &inotify::Inotify,
     watch_mask: inotify::WatchMask,
     descriptors: &mut collections::HashMap<i32, path::PathBuf>,
     to_send: &crossbeam_channel::Sender<Option<path::PathBuf>>,
-    recursive: bool,
     send_files: bool,
 ) -> Result<(), file::Error> {
-    let mut todo = collections::HashSet::new();
-    todo.insert(dir);
-
-    loop {
-        if todo.is_empty() {
-            break;
+    let mut process = |path: &path::Path, metadata: &fs::Metadata, add_watch: bool| {
+        // avoid sending or entering a dir if its name matches the ignore config
+        if should_ignore(config.ignore.as_ref(), path) {
+            return Ok(DirBehaviour::Skip);
         }
 
-        let mut next = collections::HashSet::new();
-
-        for dir in todo {
-            log::debug!("watch {}", dir.display());
-            let wd = inotify.watches().add(dir.as_path(), watch_mask)?;
-            descriptors.insert(wd.get_watch_descriptor_id(), dir.clone());
-
-            if recursive {
-                for path in dir.read_dir()?.filter_map(|entry| {
-                    entry
-                        .inspect_err(|e| log::error!("failed to read entry: {e}"))
-                        .ok()
-                        .map(|entry| entry.path())
-                }) {
-                    if path.is_dir() {
-                        next.insert(path);
-                    } else if send_files && path.is_file() {
-                        to_send.send(Some(path)).map_err(|e| {
-                            file::Error::Io(io::Error::new(
-                                io::ErrorKind::BrokenPipe,
-                                e.to_string(),
-                            ))
-                        })?;
-                    }
-                }
-            }
+        if add_watch && metadata.file_type().is_dir() {
+            log::debug!("watch {}", path.display());
+            let wd = inotify.watches().add(path, watch_mask)?;
+            descriptors.insert(wd.get_watch_descriptor_id(), path.to_owned());
+        } else if send_files && metadata.file_type().is_file() {
+            to_send.send(Some(path.to_owned())).map_err(|e| {
+                file::Error::Io(io::Error::new(io::ErrorKind::BrokenPipe, e.to_string()))
+            })?;
         }
+        Ok(DirBehaviour::Enter)
+    };
 
-        todo = next;
-    }
+    let metadata = fs::metadata(&dir)?;
+    process(&dir, &metadata, true)?;
 
+    walk_dir(dir, config.recursive, |path, metadata| {
+        process(path, metadata, config.recursive)
+    })?;
     Ok(())
 }
 
 #[cfg(feature = "inotify")]
 fn notifier_thread(
     dir: path::PathBuf,
-    recursive: bool,
+    config: &file::Config<crate::DiodeSend>,
     to_send: &crossbeam_channel::Sender<Option<path::PathBuf>>,
 ) -> Result<(), file::Error> {
     let mut inotify = inotify::Inotify::init()?;
 
-    let mut watch_mask: inotify::WatchMask =
-        inotify::WatchMask::CLOSE_WRITE | inotify::WatchMask::MOVED_TO;
-    if recursive {
-        watch_mask |= inotify::WatchMask::CREATE;
-    }
+    let watch_mask: inotify::WatchMask =
+        inotify::WatchMask::CLOSE_WRITE | inotify::WatchMask::MOVED_TO | inotify::WatchMask::CREATE;
 
     let mut descriptors = collections::HashMap::new();
 
     notifier_new_dir(
         dir,
+        config,
         &inotify,
         watch_mask,
         &mut descriptors,
         to_send,
-        recursive,
         false,
     )?;
+
+    // In static mode or in non-recursive mode, we must send directories
+    // instead of watching them
+    let should_send_dirs = config.static_watch || !config.recursive;
 
     let mut buffer = [0u8; 4096];
 
     loop {
         let events = inotify.read_events_blocking(&mut buffer)?;
         for event in events {
-            if let Some(name) = event.name {
-                match descriptors.get(&event.wd.get_watch_descriptor_id()) {
-                    None => {
-                        log::warn!("no descriptor found for event on {}", name.display());
-                    }
-                    Some(dir) => {
-                        let path = dir.join(name);
-                        if path.is_dir() {
-                            log::debug!("watch created dir {}", path.display());
-                            notifier_new_dir(
-                                path,
-                                &inotify,
-                                watch_mask,
-                                &mut descriptors,
-                                to_send,
-                                recursive,
-                                true,
-                            )?;
-                        } else if path.is_file()
-                            && (event.mask.contains(inotify::EventMask::CLOSE_WRITE)
-                                || event.mask.contains(inotify::EventMask::MOVED_TO))
-                        {
-                            log::debug!("watch new file {}", path.display());
-                            to_send.send(Some(path)).map_err(|e| {
-                                file::Error::Io(io::Error::new(
-                                    io::ErrorKind::BrokenPipe,
-                                    e.to_string(),
-                                ))
-                            })?;
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
+            let Some(name) = event.name else {
+                continue;
+            };
+            let Some(dir) = descriptors.get(&event.wd.get_watch_descriptor_id()) else {
+                log::warn!("no descriptor found for event on {}", name.display());
+                continue;
+            };
+            let path = dir.join(name);
+            let metadata = path.metadata()?;
 
-/// Lists every file under `dir` (recursively if `recursive` is set).
-#[cfg(not(feature = "inotify"))]
-fn list_files(
-    dir: &path::Path,
-    recursive: bool,
-) -> Result<collections::HashSet<path::PathBuf>, file::Error> {
-    let mut files = collections::HashSet::new();
-
-    let mut todo = collections::HashSet::new();
-    todo.insert(dir.to_path_buf());
-
-    loop {
-        if todo.is_empty() {
-            break;
-        }
-
-        let mut next = collections::HashSet::new();
-
-        for dir in todo {
-            for entry in dir
-                .read_dir()?
-                .filter_map(|entry| {
-                    entry
-                        .inspect_err(|e| log::error!("failed to read entry: {e}"))
-                        .ok()
-                        .map(|entry| entry.path())
-                })
-                .filter(|entry| recursive || entry.is_file())
+            if let Some(ignore) = config.ignore.as_ref()
+                && let Some(file_name) = name.to_str()
+                && ignore.is_match(file_name)
             {
-                if entry.is_dir() {
-                    next.insert(entry);
-                } else if entry.is_file() {
-                    files.insert(entry);
-                }
+                log::debug!("ignoring {:?}", path.display());
+                continue;
+            }
+
+            if (should_send_dirs && metadata.is_dir())
+                || (metadata.is_file()
+                    && event
+                        .mask
+                        .intersects(inotify::EventMask::CLOSE_WRITE | inotify::EventMask::MOVED_TO))
+            {
+                // send the file or the directory
+                log::debug!("watch: new file or dir to send: {}", path.display());
+                to_send.send(Some(path)).map_err(|e| {
+                    file::Error::Io(io::Error::new(io::ErrorKind::BrokenPipe, e.to_string()))
+                })?;
+            } else if metadata.is_dir() {
+                // watch the new directory
+                log::debug!("watch: new dir to watch: {}", path.display());
+                notifier_new_dir(
+                    path,
+                    config,
+                    &inotify,
+                    watch_mask,
+                    &mut descriptors,
+                    to_send,
+                    true,
+                )?;
             }
         }
-
-        todo = next;
     }
-
-    Ok(files)
 }
 
 /// Without inotify, new files are detected by periodically re-scanning the
@@ -194,29 +186,65 @@ fn list_files(
 #[allow(clippy::needless_pass_by_value)]
 fn notifier_thread(
     dir: path::PathBuf,
-    recursive: bool,
+    config: &file::Config<crate::DiodeSend>,
     to_send: &crossbeam_channel::Sender<Option<path::PathBuf>>,
 ) -> Result<(), file::Error> {
-    let mut seen = list_files(&dir, recursive)?;
+    // In static mode, we want to track directories. In non-recursive mode, we
+    // want to send top-level directories, so we need to include them as well
+    let include_dir = config.static_watch || !config.recursive;
+
+    let mut seen = collections::HashSet::new();
+    walk_dir(dir.clone(), config.recursive, |path, metadata| {
+        if include_dir || metadata.file_type().is_file() {
+            seen.insert(path.to_owned());
+        }
+        Ok(DirBehaviour::Enter)
+    })?;
 
     loop {
         thread::sleep(POLL_INTERVAL);
+        let mut new_seen = collections::HashSet::new();
 
-        for entry in list_files(&dir, recursive)? {
-            if seen.insert(entry.clone()) {
-                log::debug!("watch new file {}", entry.display());
-                to_send.send(Some(entry)).map_err(|e| {
+        walk_dir(dir.clone(), config.recursive, |path, metadata| {
+            // avoid sending or entering a dir if its name matches the ignore config
+            if should_ignore(config.ignore.as_ref(), path) {
+                return Ok(DirBehaviour::Skip);
+            }
+
+            if include_dir || metadata.file_type().is_file() {
+                new_seen.insert(path.to_owned());
+                // if we already saw the entry, skip it
+                if seen.contains(path) {
+                    return Ok(DirBehaviour::Enter);
+                }
+
+                if metadata.is_dir() && config.recursive {
+                    // add all the hierarchy to the `seen` map
+                    walk_dir(path.to_owned(), true, |p, _| {
+                        new_seen.insert(p.to_owned());
+                        Ok(DirBehaviour::Enter)
+                    })?;
+                }
+
+                log::debug!("watch: new file or dir to send: {}", path.display());
+                to_send.send(Some(path.to_owned())).map_err(|e| {
                     file::Error::Other(format!("failed to send to send_file_thread: {e}"))
                 })?;
+
+                // Do not enter in the directory: sending a dir already sends its content
+                return Ok(DirBehaviour::Skip);
             }
-        }
+            Ok(DirBehaviour::Enter)
+        })?;
+
+        seen = new_seen;
     }
 }
 
 fn send_file_thread(
     config: &file::Config<crate::DiodeSend>,
     for_send: &crossbeam_channel::Receiver<Option<path::PathBuf>>,
-    base_dir: Option<&path::PathBuf>,
+    base_dir: Option<&path::Path>,
 ) {
     let mut count = 0;
 
@@ -241,13 +269,8 @@ fn send_file_thread(
             continue;
         }
 
-        match send_file(config, path.as_path(), base_dir) {
-            Ok(total) => {
-                log::info!("file {} sent, {total} bytes sent", path.display());
-            }
-            Err(e) => {
-                log::error!("failed to send file {}: {e}", path.display());
-            }
+        if let Err(e) = send_entry(config, path.as_path(), base_dir) {
+            log::error!("failed to send file {}: {e}", path.display());
         }
 
         count += 1;
@@ -278,43 +301,25 @@ pub fn send_dir(
         if config.watch {
             let dir = dir.clone();
             thread::Builder::new().spawn_scoped(scope, || {
-                if let Err(e) = notifier_thread(dir, config.recursive, &to_send) {
+                if let Err(e) = notifier_thread(dir, config, &to_send) {
                     log::error!("{e}");
                 }
             })?;
         }
 
-        let mut todo = collections::HashSet::new();
-        todo.insert(dir);
-
-        'outer: loop {
-            if todo.is_empty() {
-                break;
+        let mut closed = false;
+        walk_dir(dir, config.recursive, |path, metadata| {
+            if closed {
+                return Ok(DirBehaviour::Skip);
             }
-
-            let mut next = collections::HashSet::new();
-
-            for dir in todo {
-                for entry in dir
-                    .read_dir()?
-                    .filter_map(|entry| {
-                        entry
-                            .inspect_err(|e| log::error!("failed to read entry: {e}"))
-                            .ok()
-                            .map(|entry| entry.path())
-                    })
-                    .filter(|entry| config.recursive || entry.is_file())
-                {
-                    if entry.is_dir() {
-                        next.insert(entry);
-                    } else if entry.is_file() && to_send.send(Some(entry)).is_err() {
-                        break 'outer;
-                    }
-                }
+            // if not --recursive, we send the directories that we see at the top level
+            if (metadata.is_file() || !config.recursive)
+                && to_send.send(Some(path.to_owned())).is_err()
+            {
+                closed = true;
             }
-
-            todo = next;
-        }
+            Ok(DirBehaviour::Enter)
+        })?;
 
         if !config.watch {
             to_send
@@ -333,11 +338,10 @@ pub fn send_dir(
 pub fn send_files(
     config: &file::Config<crate::DiodeSend>,
     paths: Vec<path::PathBuf>,
-    base_dir: Option<&path::PathBuf>,
+    base_dir: Option<&path::Path>,
 ) -> Result<(), file::Error> {
     for path in paths {
-        let total = send_file(config, path.as_path(), base_dir)?;
-        log::info!("file {} sent, {total} bytes sent", path.display());
+        send_entry(config, path.as_path(), base_dir)?;
     }
     Ok(())
 }
@@ -349,25 +353,24 @@ pub fn send_files(
 ///   or
 /// - `unix::net::UnixStream::connect(path)?`
 ///   fails.
-pub fn send_file(
+fn connect_to_diode(
     config: &file::Config<crate::DiodeSend>,
-    path: &path::Path,
-    base_dir: Option<&path::PathBuf>,
-) -> Result<usize, file::Error> {
+) -> Result<Box<dyn Write>, file::Error> {
     log::debug!("connecting to {}", config.diode);
 
-    let res = match &config.diode {
+    Ok(match &config.diode {
         crate::DiodeSend::Tcp(socket_addr) => {
             #[cfg(not(feature = "tcp"))]
             {
                 let _ = socket_addr;
                 log::error!("TCP was not enable at compilation");
-                Ok(0)
+                return Err(file::Error::Other(
+                    "TCP was not enable at compilation".to_owned(),
+                ));
             }
             #[cfg(feature = "tcp")]
             {
-                let diode = net::TcpStream::connect(socket_addr)?;
-                send_file_aux(config, diode, path, base_dir)
+                Box::new(net::TcpStream::connect(socket_addr)?)
             }
         }
         crate::DiodeSend::Tls(socket_addr) => {
@@ -375,13 +378,14 @@ pub fn send_file(
             {
                 let _ = socket_addr;
                 log::error!("TLS was not enable at compilation");
-                Ok(0)
+                return Err(file::Error::Other(
+                    "TLS was not enable at compilation".to_owned(),
+                ));
             }
             #[cfg(feature = "tls")]
             {
                 let context = tls::ClientContext::try_from(&config.tls)?;
-                let diode = tls::TcpStream::connect(&context, socket_addr)?;
-                send_file_aux(config, diode, path, base_dir)
+                Box::new(tls::TcpStream::connect(&context, socket_addr)?)
             }
         }
         crate::DiodeSend::Unix(spath) => {
@@ -389,33 +393,124 @@ pub fn send_file(
             {
                 let _ = spath;
                 log::error!("Unix was not enable at compilation");
-                Ok(0)
+                return Err(file::Error::Other(
+                    "Unix was not enable at compilation".to_owned(),
+                ));
             }
             #[cfg(feature = "unix")]
             {
-                let diode = unix::net::UnixStream::connect(spath)?;
-                send_file_aux(config, diode, path, base_dir)
+                Box::new(unix::net::UnixStream::connect(spath)?)
             }
         }
-    }?;
+    })
+}
 
-    if config.delete {
-        if let Err(e) = fs::remove_file(path) {
-            log::error!("failed to delete file {}: {e}", path.display());
-        }
+pub fn send_entry(
+    config: &file::Config<crate::DiodeSend>,
+    path: &path::Path,
+    base_dir: Option<&path::Path>,
+) -> Result<usize, file::Error> {
+    let diode = connect_to_diode(config)?;
+
+    let metadata = fs::metadata(path)?;
+    let entry_type;
+    let size;
+    if metadata.is_dir() {
+        entry_type = EntryType::Directory;
+        size = send_dir_entry(diode, config, path, base_dir, &metadata)?;
+    } else if metadata.is_file() {
+        entry_type = EntryType::File;
+        size = send_file_entry(diode, config, path, base_dir, &metadata)?;
+    } else {
+        return Err(file::Error::Other("not a file or a dir".into()));
+    }
+
+    log::info!(
+        "{entry_type} \"{}\" sent, {size} bytes sent",
+        path.display()
+    );
+
+    Ok(size)
+}
+
+pub fn send_file_entry<D>(
+    mut diode: D,
+    config: &file::Config<crate::DiodeSend>,
+    path: &path::Path,
+    base_dir: Option<&path::Path>,
+    metadata: &fs::Metadata,
+) -> Result<usize, file::Error>
+where
+    D: Write,
+{
+    let res = send_file_aux(config, &mut diode, path, base_dir, metadata)?;
+
+    if config.delete
+        && let Err(e) = fs::remove_file(path)
+    {
+        log::error!("failed to delete file {}: {e}", path.display());
     }
 
     Ok(res)
 }
 
-fn send_file_aux<D>(
-    config: &file::Config<crate::DiodeSend>,
+pub fn send_dir_entry<D>(
     mut diode: D,
-    file_path: &path::Path,
-    base_dir: Option<&path::PathBuf>,
+    config: &file::Config<crate::DiodeSend>,
+    path: &path::Path,
+    base_dir: Option<&path::Path>,
+    metadata: &fs::Metadata,
 ) -> Result<usize, file::Error>
 where
-    D: Read + Write,
+    D: Write,
+{
+    log::info!("sending directory \"{}\"", path.display());
+
+    let start_msg = file::protocol::Message::StartDirTransfer(file::protocol::EntryInfo {
+        path: path_to_vec(path, base_dir)?,
+        mode: metadata.permissions().mode(),
+    });
+    start_msg.serialize_to(&mut diode)?;
+
+    let mut total_size = 0;
+
+    walk_dir(path.into(), true, |entry_path, metadata| {
+        if metadata.file_type().is_dir() {
+            log::info!("sending subdirectory \"{}\"", entry_path.display());
+            let message = file::protocol::Message::DirEntry(file::protocol::EntryInfo {
+                path: path_to_vec(entry_path, Some(path))?,
+                mode: metadata.permissions().mode(),
+            });
+            message.serialize_to(&mut diode)?;
+        } else if metadata.file_type().is_file() {
+            total_size += send_file_aux(config, &mut diode, entry_path, Some(path), metadata)?;
+        } else {
+            log::error!("ignoring {}: not a file or a dir", entry_path.display());
+        }
+        Ok(DirBehaviour::Enter)
+    })?;
+
+    let end_msg = file::protocol::Message::EndDirTransfer;
+    end_msg.serialize_to(&mut diode)?;
+
+    if config.delete
+        && let Err(e) = fs::remove_dir_all(path)
+    {
+        log::error!("failed to delete directory {}: {e}", path.display());
+    }
+
+    Ok(total_size)
+}
+
+fn send_file_aux<D>(
+    config: &file::Config<crate::DiodeSend>,
+    mut diode: &mut D,
+    file_path: &path::Path,
+    base_dir: Option<&path::Path>,
+    metadata: &fs::Metadata,
+) -> Result<usize, file::Error>
+where
+    D: Write,
 {
     log::debug!("opening file {}", file_path.display());
 
@@ -429,44 +524,15 @@ where
         .create(false)
         .open(file_path)?;
 
-    let metadata = file.metadata()?;
-    let permissions = metadata.permissions();
-
-    let file_path = if let Some(base_dir) = base_dir {
-        let mut paths = vec![];
-        let file_path = file_path.strip_prefix(base_dir).map_err(|_| {
-            file::Error::Other(format!(
-                "file {} is not in {}",
-                file_path.display(),
-                base_dir.display()
-            ))
-        })?;
-        for path in file_path.components() {
-            paths.push(path.as_os_str().to_os_string().into_string().map_err(|_| {
-                file::Error::Other(String::from("conversion from OsString to String failed"))
-            })?);
-        }
-        paths
-    } else {
-        vec![
-            file_path
-                .file_name()
-                .ok_or_else(|| file::Error::Other(String::from("unwrap of file_name failed")))?
-                .to_os_string()
-                .into_string()
-                .map_err(|_| {
-                    file::Error::Other(String::from("conversion from OsString to String failed"))
-                })?,
-        ]
-    };
-
-    let header = file::protocol::Header {
-        file_path,
-        mode: permissions.mode(),
+    let message = file::protocol::Message::FileEntry(file::protocol::FileHeader {
+        info: file::protocol::EntryInfo {
+            path: path_to_vec(file_path, base_dir)?,
+            mode: metadata.permissions().mode(),
+        },
         file_length: metadata.len(),
-    };
+    });
 
-    header.serialize_to(&mut diode)?;
+    message.serialize_to(&mut diode)?;
 
     let mut buffer = vec![0; config.buffer_size];
     let mut cursor = 0;
@@ -480,9 +546,9 @@ where
     };
 
     log::info!(
-        "sending file {:?} ({} bytes)",
-        header.file_path,
-        header.file_length
+        "sending file \"{}\" ({} bytes)",
+        file_path.display(),
+        metadata.len()
     );
 
     loop {
@@ -524,4 +590,37 @@ where
             }
         }
     }
+}
+
+fn path_to_vec(
+    mut file_path: &path::Path,
+    base_dir: Option<&path::Path>,
+) -> Result<Vec<String>, file::Error> {
+    Ok(if let Some(base_dir) = base_dir {
+        let mut paths: Vec<String> = vec![];
+        file_path = file_path.strip_prefix(base_dir).map_err(|_| {
+            file::Error::Other(format!(
+                "file {} is not in {}",
+                file_path.display(),
+                base_dir.display()
+            ))
+        })?;
+        for path in file_path.components() {
+            paths.push(path.as_os_str().to_os_string().into_string().map_err(|_| {
+                file::Error::Other(String::from("conversion from OsString to String failed"))
+            })?);
+        }
+        paths
+    } else {
+        vec![
+            file_path
+                .file_name()
+                .ok_or_else(|| file::Error::Other(String::from("unwrap of file_name failed")))?
+                .to_os_string()
+                .into_string()
+                .map_err(|_| {
+                    file::Error::Other(String::from("conversion from OsString to String failed"))
+                })?,
+        ]
+    })
 }

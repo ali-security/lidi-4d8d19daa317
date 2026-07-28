@@ -32,6 +32,8 @@ pub struct Config<D> {
     pub ignore: Option<regex::Regex>,
     /// Recurse into sub-directories (directory sending).
     pub recursive: bool,
+    /// Send new directories instead of watching them (directory sending)
+    pub static_watch: bool,
     /// Watch the directory for new files (directory sending).
     pub watch: bool,
     /// TLS material for `tls:` connections.
@@ -39,7 +41,22 @@ pub struct Config<D> {
     pub delete: bool,
 }
 
+enum EntryType {
+    File,
+    Directory,
+}
+
+impl fmt::Display for EntryType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::File => write!(f, "file"),
+            Self::Directory => write!(f, "directory"),
+        }
+    }
+}
+
 /// Errors returned by the file transfer client.
+#[derive(Debug)]
 pub enum Error {
     /// An underlying I/O operation failed.
     Io(io::Error),

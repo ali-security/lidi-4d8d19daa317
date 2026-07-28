@@ -231,9 +231,17 @@ def stop_throttled_diode(context):
         context.tc_shaper.teardown()
         context.tc_shaper = None
 
-def start_lidi_send_dir(context, watch=False, ignore=None, bin_dir=None, delete=False):
+
+def start_lidi_send_dir(context,
+                        watch=False,
+                        ignore=None,
+                        bin_dir=None,
+                        delete=False,
+                        recursive=False,
+                        static=False,
+                        should_exit=False):
     """Start the lidi send directory process."""
-    lidi_send_dir_command = build_lidi_send_dir_command(context, watch, ignore, bin_dir, delete)
+    lidi_send_dir_command = build_lidi_send_dir_command(context, watch, ignore, bin_dir, delete, recursive, static)
 
     # Start lidi-dir-send
     context.proc_lidi_send_dir = subprocess.Popen(
@@ -248,8 +256,14 @@ def start_lidi_send_dir(context, watch=False, ignore=None, bin_dir=None, delete=
 
     rc = context.proc_lidi_send_dir.poll()
     if rc is not None:
+        if should_exit and rc == 0:
+            return
         print(f"lidi-dir-send failed with return code {rc}")
         raise Exception("Can't start lidi dir send")
+
+    if should_exit:
+        raise Exception("lidi-dir-send did not exit")
+
 
 def send_file_command(context, filename, background=False):
     """Execute send file command with specified parameters."""    

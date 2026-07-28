@@ -122,7 +122,7 @@ class UdpServer:
                 break
 
 from features.steps.lidi import create_file, send_file, send_multiple_files, start_diode, start_lidi_file_receive, start_lidi_receive, start_lidi_send, start_lidi_send_dir, start_lidi_udp_send, start_lidi_udp_receive, start_throttled_diode, start_udp_tunnel_diode, stop_lidi_file_receive, stop_lidi_graceful, stop_lidi_receive, stop_lidi_send, stop_lidi_udp_send, stop_lidi_udp_receive, wait_for_port_bound
-from features.steps.file import create_and_copy_file, create_and_copy_multiple_files, create_and_move_file, parse_human_size, test_file, test_no_file
+from features.steps.file import create_and_copy_file, create_and_copy_multiple_files, create_and_move_file, parse_human_size, test_file, test_no_file, create_and_move_test_dir, wait_for_dir
 from features.steps.config import build_lidi_send_file_command
 
 use_step_matcher("cfparse")
@@ -166,21 +166,40 @@ def step_impl(context):
     stop_lidi_file_receive(context)
     start_lidi_file_receive(context)
 
-@given('lidi-dir-send is started with watch and ignore dot files')
-def step_lidi_send_dir_with_watch_and_ignore_dot_files(context):
-    start_lidi_send_dir(context, True, '^\\.')
 
-@given('lidi-dir-send is started with watch')
-def step_lidi_send_dir_with_watch(context):
-    start_lidi_send_dir(context, True)
+@given('lidi-dir-send is started with {recursive_mode} {watch_mode} watch and ignore dot files')
+def step_lidi_send_dir_with_watch_and_ignore_dot_files(context, recursive_mode, watch_mode):
+    # we also activate delete mode to check that excluded files are not deleted
+    start_lidi_send_dir(context, True, '^\\.',
+                        delete=True,
+                        recursive=recursive_mode == "recursive",
+                        static=watch_mode == "static")
 
-@given('lidi-dir-send is started with watch without inotify')
-def step_lidi_send_dir_with_watch_without_inotify(context):
-    start_lidi_send_dir(context, True, bin_dir=context.bin_dir_no_inotify)
 
+@given('lidi-dir-send is started with {recursive_mode} {watch_mode} watch')
+def step_lidi_send_dir_with_watch(context, recursive_mode, watch_mode):
+    start_lidi_send_dir(context, True,
+                        recursive=recursive_mode == "recursive",
+                        static=watch_mode == "static")
+
+
+@given('lidi-dir-send is started with {recursive_mode} {watch_mode} watch without inotify')
+def step_lidi_send_dir_with_watch_without_inotify(context, recursive_mode, watch_mode):
+    start_lidi_send_dir(context, True,
+                        bin_dir=context.bin_dir_no_inotify,
+                        recursive=recursive_mode == "recursive",
+                        static=watch_mode == "static")
+
+
+@when('lidi-dir-send is started')
 @given('lidi-dir-send is started')
 def step_lidi_send_dir(context):
-    start_lidi_send_dir(context)
+    start_lidi_send_dir(context, should_exit=True)
+
+
+@when('lidi-dir-send is started with recursive')
+def step_lidi_send_dir(context):
+    start_lidi_send_dir(context, should_exit=True, recursive=True)
 
 @given('lidi is started with max throughput of {throughput} and MTU {mtu}')
 def step_lidi_started_with_max_throughput_and_mtu(context, throughput, mtu):
@@ -3355,17 +3374,53 @@ def step_configure_receive_file_overwrite(context):
     """Configure lidi-receive-file to overwrite files"""
     context.receive_file_overwrite = True
 
-@given('lidi-dir-send is started with watch and delete')
-def step_lidi_send_dir_with_delete_sent_files(context):
-    start_lidi_send_dir(context, watch=True, delete=True)
 
-@then('file {file} does not exist in input directory')
+@given('lidi-dir-send is started with {recursive_mode} {watch_mode} watch and delete')
+def step_lidi_send_dir_with_delete_sent_files(context, recursive_mode, watch_mode):
+    start_lidi_send_dir(context, watch=True, delete=True,
+                        recursive=recursive_mode == "recursive",
+                        static=watch_mode.strip() == "static")
+
+
+@then('{file} does not exist in input directory')
 def step_file_not_exist_in_input_dir(context, file):
     if os.path.exists(os.path.join(context.send_dir, file)):
-        raise Exception(f"file {file} exists in input directory")
+        raise Exception(f"{file} exists in input directory")
+
+
+@then('{file} exists in input directory')
+def step_file_exist_in_input_dir(context, file):
+    if not os.path.exists(os.path.join(context.send_dir, file)):
+        raise Exception(f"{file} does not exist in input directory")
 
 @then('the receiver log contains no "already exists" error')
 def step_receiver_log_no_already_exists_error(context):
     time.sleep(1)
     if 'already exists' in _read_receiver_log(context):
         raise Exception("Unexpected 'already exists' error found in receiver log")
+
+
+# ---------------------------------------------------------------------------
+# lidi-send-dir send directory
+# ---------------------------------------------------------------------------
+
+@given('an empty directory {name} exists in the input directory')
+@when('we create a directory {name} in the input directory')
+def step_mkdir(context, name):
+    os.mkdir(os.path.join(context.send_dir, name))
+
+
+@given('a directory {name} of size {size} exists in the input directory')
+@when('we move a directory {name} of size {size} in the input directory')
+def step_move_dir(context, name, size):
+    create_and_move_test_dir(context, name, size)
+
+
+@then('lidi-file-receive dir {name} in {seconds} seconds')
+def step_check_receive_dir(context, name, seconds):
+    wait_for_dir(context, name, seconds, True)
+
+
+@then('lidi-file-receive no dir {name} in {seconds} seconds')
+def step_check_no_receive_dir(context, name, seconds):
+    wait_for_dir(context, name, seconds, False)

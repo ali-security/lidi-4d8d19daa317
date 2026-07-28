@@ -41,6 +41,7 @@ pub unsafe extern "C" fn diode_new_config(
         ignore: None,
         recursive: false,
         watch: false,
+        static_watch: false,
         delete: false,
         tls: lidi_clients::Tls::default(),
     });
@@ -86,7 +87,7 @@ pub unsafe extern "C" fn diode_send_file(
         PathBuf::from(String::from_utf8_lossy(cstr_filepath.to_bytes()).to_string());
 
     let result: usize =
-        clients::file::send::send_file(config, rust_filepath.as_path(), None).unwrap_or(0);
+        clients::file::send::send_entry(config, rust_filepath.as_path(), None).unwrap_or(0);
     u32::try_from(result).unwrap_or(0)
 }
 
@@ -130,6 +131,7 @@ pub unsafe extern "C" fn diode_receive_files(
         ignore: None,
         recursive: false,
         watch: false,
+        static_watch: false,
         delete: config.delete,
         tls: config.tls.clone(),
     };

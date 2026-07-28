@@ -86,7 +86,7 @@ def store_file_info(context, filename):
 def wait_for_file(context, dir, name, seconds, expect_file=True):
     """Wait for a file to be received with content verification."""
     # Get info about the file
-    info = context.files[name]
+    info = context.files[os.path.basename(name)]
     file_size = info['size']
     file_hash = info['hash']
 
@@ -95,7 +95,7 @@ def wait_for_file(context, dir, name, seconds, expect_file=True):
 
     # Wait for it
     timeout_seconds = int(seconds)
-    timeout_milliseconds = timeout_seconds * 1000
+    timeout_milliseconds = timeout_seconds * 1000 + 1
     
     for _ in range(timeout_milliseconds):
         try:
@@ -130,7 +130,7 @@ def wait_for_file(context, dir, name, seconds, expect_file=True):
 
     # Loop stops before receiving file
     if expect_file:
-        raise Exception('File not received')
+        raise Exception(f'File {filename} not received')
 
 def test_file(context, dir, name, seconds):
     """Test that a file is received."""
@@ -158,6 +158,56 @@ def create_and_copy_multiple_files(context, files, size):
 
 def create_and_move_file(context, name, size):
     """Create a file and move it to the send directory."""
-    send_dir = context.send_dir
-    destname = os.path.join(send_dir, name)
-    create_file(context, destname, size)
+    tmpname = os.path.join(context.tmp_dir, name)
+    destname = os.path.join(context.send_dir, name)
+    create_file(context, tmpname, size)
+    os.rename(tmpname, destname)
+
+
+def create_and_move_test_dir(context, name, size):
+    """Create a dir hierarchy and move it to the send directory.
+    The hierarchy contains an empty and a non-empty dir, + an empty and a non-empty file.
+    One of the files and one of the dirs start with a dot to test ignore rules.
+    """
+    tmpname = os.path.join(context.tmp_dir, name)
+    destname = os.path.join(context.send_dir, name)
+    dir_a = os.path.join(tmpname, ".A")
+    dir_b = os.path.join(tmpname, "B")
+    dir_bb = os.path.join(dir_b, "BB")
+    file_c = os.path.join(tmpname, ".C")
+    file_aa = os.path.join(dir_a, "AA")
+    os.makedirs(tmpname)
+    os.mkdir(dir_a)
+    os.makedirs(dir_bb)
+    create_file(context, file_aa, "0B")
+    create_file(context, file_c, size)
+    os.rename(tmpname, destname)
+
+
+def wait_for_dir(context, name, seconds, expect_dir):
+    """Wait for a directory to be received and verify its content"""
+    path = os.path.join(context.receive_dir, name)
+
+    timeout_seconds = int(seconds)
+    timeout_milliseconds = timeout_seconds * 1000
+
+    for _ in range(timeout_milliseconds):
+        if not os.path.isdir(path):
+            time.sleep(0.001)
+            continue
+
+        if not expect_dir:
+            raise Exception(f'Directory {path} unexpectedly received')
+
+        dir_a = os.path.join(path, ".A")
+        dir_bb = os.path.join(path, "B", "BB")
+        if (not os.path.isdir(dir_a)
+                or not os.path.isdir(dir_bb)):
+            raise Exception(f'Missing a dir in {path}')
+
+        wait_for_file(context, dir_a, "AA", 0, True)
+        wait_for_file(context, path, ".C", 0, True)
+        return
+
+    if expect_dir:
+        raise Exception(f'Directory {path} not received')

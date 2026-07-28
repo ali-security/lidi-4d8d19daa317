@@ -32,6 +32,8 @@ Sending a file
              Size of client internal read/write buffer [default: 4194304]
          --hash
              Compute and send the hash of file content
+         --delete
+             Delete files after sending
          --tls-key <path>           Path to PEM key file
          --tls-certificate <path>   Path to PEM certificate file
          --tls-ca <path>            Path to PEM accepted CA file
@@ -80,6 +82,8 @@ Sending a directory
              Recurse in given directory
          --watch
              Watch for new files
+         --delete
+             Delete files after sending
          (plus the same --tls-* options as lidi-file-send)
      -h, --help
              Print help

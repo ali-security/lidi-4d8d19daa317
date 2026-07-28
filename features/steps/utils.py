@@ -42,5 +42,8 @@ def nice(process_name):
             process = psutil.Process(proc.pid)
             # must be root
             if os.getuid() == 0:
-                process.nice(-20)
+                try:
+                    process.nice(-20)
+                except psutil.AccessDenied:
+                    pass
             return

@@ -27,7 +27,8 @@ Feature: Test file management options like --delete and --overwrite
     And A exists in input directory
 
   Scenario: Send and receive directory with --overwrite and --delete arguments
-    Given lidi-receive-file is configured to overwrite files
+    Given lidi-file-receive uses a temporary directory
+    And lidi-receive-file is configured to overwrite files
     And lidi is started
     And lidi-dir-send is started with non-recursive static watch and delete
     When we move a directory A of size 1KB in the input directory
@@ -38,7 +39,8 @@ Feature: Test file management options like --delete and --overwrite
     And A does not exist in input directory
 
   Scenario: Send directory without the --delete argument
-    Given lidi is started
+    Given lidi-file-receive uses a temporary directory
+    And lidi is started
     And lidi-dir-send is started with non-recursive static watch
     When we move a directory A of size 1KB in the input directory
     Then lidi-file-receive dir A in 5 seconds

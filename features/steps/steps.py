@@ -3424,3 +3424,46 @@ def step_check_receive_dir(context, name, seconds):
 @then('lidi-file-receive no dir {name} in {seconds} seconds')
 def step_check_no_receive_dir(context, name, seconds):
     wait_for_dir(context, name, seconds, False)
+
+
+# ---------------------------------------------------------------------------
+# lidi-file-receive --from-unix stale socket safety
+# ---------------------------------------------------------------------------
+
+@given('a regular file exists at the Unix socket path')
+def step_create_regular_file_at_unix_socket_path(context):
+    context.unix_socket_path = os.path.join(context.base_dir, "not_a_socket")
+    with open(context.unix_socket_path, 'w') as f:
+        f.write("this is a regular file, not a socket\n")
+
+
+@when('lidi-file-receive is started with --from-unix at that path')
+def step_start_file_receive_from_unix(context):
+    output_dir = os.path.join(context.base_dir, "unix_test_output")
+    os.makedirs(output_dir, exist_ok=True)
+    cmd = [
+        os.path.join(context.bin_dir, 'lidi-file-receive'),
+        '--from-unix', context.unix_socket_path,
+        output_dir,
+    ]
+    result = subprocess.run(cmd, timeout=5, text=True, capture_output=True)
+    context.unix_socket_test_result = result
+
+
+@then('lidi-file-receive exits with an error mentioning "{message}"')
+def step_check_error_message(context, message):
+    result = context.unix_socket_test_result
+    if result.returncode == 0:
+        raise Exception("Expected lidi-file-receive to exit with an error, but it succeeded")
+    if message not in result.stderr:
+        raise Exception(f'Expected "{message}" in stderr, got: {result.stderr}')
+
+
+@then('the regular file at the Unix socket path still exists and is unchanged')
+def step_check_regular_file_unchanged(context):
+    if not os.path.isfile(context.unix_socket_path):
+        raise Exception(f"{context.unix_socket_path} was deleted or is no longer a regular file")
+    with open(context.unix_socket_path) as f:
+        content = f.read()
+    if content != "this is a regular file, not a socket\n":
+        raise Exception(f"{context.unix_socket_path} content was modified: {content!r}")

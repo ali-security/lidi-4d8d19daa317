@@ -198,7 +198,7 @@ def step_lidi_send_dir(context):
 
 
 @when('lidi-dir-send is started with recursive')
-def step_lidi_send_dir(context):
+def step_lidi_send_dir_recursive(context):
     start_lidi_send_dir(context, should_exit=True, recursive=True)
 
 @given('lidi is started with max throughput of {throughput} and MTU {mtu}')

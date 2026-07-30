@@ -122,7 +122,7 @@ class UdpServer:
                 break
 
 from features.steps.lidi import create_file, send_file, send_multiple_files, start_diode, start_lidi_file_receive, start_lidi_receive, start_lidi_send, start_lidi_send_dir, start_lidi_udp_send, start_lidi_udp_receive, start_throttled_diode, start_udp_tunnel_diode, stop_lidi_file_receive, stop_lidi_graceful, stop_lidi_receive, stop_lidi_send, stop_lidi_udp_send, stop_lidi_udp_receive, wait_for_port_bound
-from features.steps.file import create_and_copy_file, create_and_copy_multiple_files, create_and_move_file, parse_human_size, test_file, test_no_file, create_and_move_test_dir, wait_for_dir
+from features.steps.file import create_and_copy_file, create_and_copy_multiple_files, create_and_move_file, parse_human_size, test_file, test_no_file, create_and_move_test_dir, create_test_dir_in_place, wait_for_dir
 from features.steps.config import build_lidi_send_file_command
 
 use_step_matcher("cfparse")
@@ -334,6 +334,15 @@ def step_impl(context):
 @when(u'we copy a file {name} of size {size}')
 def step_impl(context, name, size):
     create_and_copy_file(context, name, size)
+
+@given(u'a directory {name} with a dot subdirectory already exists in send directory')
+def step_impl(context, name):
+    # Creates the DIR/.A/AA, DIR/B/BB, DIR/.C hierarchy directly in the send
+    # directory *before* lidi-dir-send is started, so it is only ever seen
+    # by the initial directory scan (never by a later inotify event). This
+    # exercises the --ignore filtering applied during that initial scan in
+    # send_dir().
+    create_test_dir_in_place(context, name, "1KB")
 
 @when(u'we copy {files} files of size {size}')
 def step_impl(context, files, size):

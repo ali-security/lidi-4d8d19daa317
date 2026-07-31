@@ -7,10 +7,11 @@ use crate::tls;
 use std::net;
 #[cfg(feature = "unix")]
 use std::os::unix;
+#[cfg(target_family = "unix")]
+use std::os::unix::fs::PermissionsExt;
 use std::{
     fs,
     io::{self, Read, Write},
-    os::unix::fs::PermissionsExt,
     path, thread,
 };
 
@@ -312,6 +313,7 @@ where
                 log::info!("receiving subdirectory \"{}\"", rel_path.display());
                 let subdir = dir_path.join(rel_path);
                 fs::create_dir(&subdir)?;
+                #[cfg(target_family = "unix")]
                 fs::set_permissions(&subdir, fs::Permissions::from_mode(info.mode))?;
             }
         }

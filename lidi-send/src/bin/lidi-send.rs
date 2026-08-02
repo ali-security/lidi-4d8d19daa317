@@ -1,6 +1,4 @@
 use lidi_command_utils::config;
-#[cfg(feature = "from-unix")]
-use lidi_command_utils::socket::remove_stale_unix_socket;
 #[cfg(feature = "from-tls")]
 use lidi_command_utils::tls;
 use lidi_protocol as protocol;
@@ -210,6 +208,33 @@ fn unix_listener_start<'a>(
         .expect("thread spawn");
 
     Ok(())
+}
+
+/// Removes a stale Unix domain socket file left over from a previous run so
+/// that a listener can re-bind the path.
+///
+/// # Errors
+///
+/// Will return `Err` if `path` exists but is not a socket (refuses to delete
+/// unrelated user files), or if removing the stale socket fails.
+#[cfg(feature = "from-unix")]
+fn remove_stale_unix_socket(path: &path::Path) -> Result<(), io::Error> {
+    use std::os::unix::fs::FileTypeExt;
+
+    let metadata = match std::fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(e),
+    };
+
+    if !metadata.file_type().is_socket() {
+        return Err(io::Error::other(format!(
+            "'{}' already exists and is not a socket, refusing to delete it",
+            path.display()
+        )));
+    }
+
+    std::fs::remove_file(path)
 }
 
 #[allow(clippy::too_many_lines)]

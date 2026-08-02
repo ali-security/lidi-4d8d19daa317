@@ -7,9 +7,6 @@
 
 use std::{fmt, net, path};
 
-#[cfg(feature = "unix")]
-pub(crate) use lidi_command_utils::socket::remove_stale_unix_socket;
-
 #[cfg(not(any(feature = "tcp", feature = "tls", feature = "unix")))]
 compile_error!("at least one of tcp, tls, or unix features must be enabled");
 
@@ -165,6 +162,33 @@ impl fmt::Display for DiodeReceive {
         }
         Ok(())
     }
+}
+
+/// Removes a stale Unix domain socket file left over from a previous run so
+/// that a listener can re-bind the path.
+///
+/// # Errors
+///
+/// Will return `Err` if `path` exists but is not a socket (refuses to delete
+/// unrelated user files), or if removing the stale socket fails.
+#[cfg(feature = "unix")]
+fn remove_stale_unix_socket(path: &path::Path) -> Result<(), std::io::Error> {
+    use std::os::unix::fs::FileTypeExt;
+
+    let metadata = match std::fs::symlink_metadata(path) {
+        Ok(metadata) => metadata,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(e),
+    };
+
+    if !metadata.file_type().is_socket() {
+        return Err(std::io::Error::other(format!(
+            "'{}' already exists and is not a socket, refusing to delete it",
+            path.display()
+        )));
+    }
+
+    std::fs::remove_file(path)
 }
 
 fn init_logger_simplelog(level_filter: log::LevelFilter) -> Result<(), String> {

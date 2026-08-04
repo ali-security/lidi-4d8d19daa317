@@ -1,16 +1,16 @@
 use lidi_command_utils::{config, socket};
-use std::{io, net, os::fd::AsRawFd};
+use std::{io, net};
 #[cfg(feature = "receive-mmsg")]
 use std::{marker, ptr};
 #[cfg(any(feature = "receive-msg", feature = "receive-mmsg"))]
-use std::{mem, pin};
+use std::{mem, os::fd::AsRawFd, pin};
 
-pub fn get_socket_recv_buffer_size<S: AsRawFd>(socket: &S) -> Result<i32, io::Error> {
-    socket::getsockopt_buffer_size(socket.as_raw_fd(), libc::SO_RCVBUF)
+pub fn get_socket_recv_buffer_size(socket: &net::UdpSocket) -> Result<i32, io::Error> {
+    socket::get_recv_buffer_size(socket)
 }
 
-pub fn set_socket_recv_buffer_size<S: AsRawFd>(socket: &S, size: i32) -> Result<(), io::Error> {
-    socket::setsockopt_buffer_size(socket.as_raw_fd(), size, libc::SO_RCVBUF)
+pub fn set_socket_recv_buffer_size(socket: &net::UdpSocket, size: i32) -> Result<(), io::Error> {
+    socket::set_recv_buffer_size(socket, size)
 }
 
 pub enum ReceiveDatagrams<'a> {

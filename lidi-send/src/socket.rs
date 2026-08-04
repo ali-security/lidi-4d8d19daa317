@@ -1,9 +1,9 @@
 use lidi_command_utils::{config, socket};
 #[cfg(feature = "send-mmsg")]
 use std::num;
-use std::{io, net, os::fd::AsRawFd};
+use std::{io, net};
 #[cfg(any(feature = "send-msg", feature = "send-mmsg"))]
-use std::{mem, pin};
+use std::{mem, os::fd::AsRawFd, pin};
 
 #[cfg(all(feature = "send-mmsg", not(target_os = "freebsd")))]
 type MmsgLenType = u32;
@@ -15,12 +15,12 @@ type SendMmsgLenType = u32;
 #[cfg(all(feature = "send-mmsg", target_os = "freebsd"))]
 type SendMmsgLenType = usize;
 
-pub fn get_socket_send_buffer_size<S: AsRawFd>(socket: &S) -> Result<i32, io::Error> {
-    socket::getsockopt_buffer_size(socket.as_raw_fd(), libc::SO_SNDBUF)
+pub fn get_socket_send_buffer_size(socket: &net::UdpSocket) -> Result<i32, io::Error> {
+    socket::get_send_buffer_size(socket)
 }
 
-pub fn set_socket_send_buffer_size<S: AsRawFd>(socket: &S, size: i32) -> Result<(), io::Error> {
-    socket::setsockopt_buffer_size(socket.as_raw_fd(), size, libc::SO_SNDBUF)
+pub fn set_socket_send_buffer_size(socket: &net::UdpSocket, size: i32) -> Result<(), io::Error> {
+    socket::set_send_buffer_size(socket, size)
 }
 
 pub enum Send {

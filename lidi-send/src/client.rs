@@ -2,7 +2,7 @@
 
 use lidi_command_utils::config;
 use lidi_protocol as protocol;
-use std::{io, os::fd::AsRawFd};
+use std::io;
 
 pub fn start<C>(
     sender: &crate::Sender<C>,
@@ -12,7 +12,7 @@ pub fn start<C>(
     mut client: C,
 ) -> Result<(), crate::Error>
 where
-    C: io::Read + AsRawFd + Send,
+    C: io::Read + Send,
 {
     log::info!("client {client_id:x}: connected");
 

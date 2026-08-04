@@ -32,9 +32,7 @@ use std::time;
 use std::{
     fmt,
     io::{self, Read},
-    net,
-    os::fd::AsRawFd,
-    thread,
+    net, thread,
 };
 
 mod client;
@@ -197,7 +195,7 @@ pub struct Sender<C> {
 
 impl<C> Sender<C>
 where
-    C: Read + AsRawFd + Send,
+    C: Read + Send,
 {
     #[cfg(feature = "prometheus")]
     #[allow(clippy::cast_precision_loss)]

@@ -37,7 +37,7 @@ use lidi_protocol as protocol;
 use std::net;
 #[cfg(feature = "to-unix")]
 use std::os::unix;
-use std::{fmt, io, os, thread, time};
+use std::{fmt, io, thread, time};
 
 mod client;
 mod client_reorder;
@@ -267,7 +267,7 @@ where
 }
 
 /// A destination a decoded transfer can be written to (a TCP/TLS/Unix stream, or stdout).
-pub trait Client: io::Write + os::fd::AsRawFd {}
+pub trait Client: io::Write {}
 
 impl Client for io::Stdout {}
 

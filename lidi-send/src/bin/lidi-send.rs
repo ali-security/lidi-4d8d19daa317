@@ -7,7 +7,6 @@ use lidi_send as send;
 use std::net;
 use std::{
     io::{self, Read},
-    os::fd::AsRawFd,
     sync, thread,
 };
 #[cfg(feature = "from-unix")]
@@ -31,19 +30,6 @@ impl Read for Client {
             Self::Tls(stream) => stream.read(buf),
             #[cfg(feature = "from-unix")]
             Self::Unix(stream) => stream.read(buf),
-        }
-    }
-}
-
-impl AsRawFd for Client {
-    fn as_raw_fd(&self) -> i32 {
-        match self {
-            #[cfg(feature = "from-tcp")]
-            Self::Tcp(stream) => stream.as_raw_fd(),
-            #[cfg(feature = "from-tls")]
-            Self::Tls(stream) => stream.as_raw_fd(),
-            #[cfg(feature = "from-unix")]
-            Self::Unix(stream) => stream.as_raw_fd(),
         }
     }
 }

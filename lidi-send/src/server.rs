@@ -2,7 +2,7 @@
 
 use crate::client;
 use lidi_protocol as protocol;
-use std::{io::Read, os::fd::AsRawFd, sync};
+use std::{io::Read, sync};
 
 static CLIENT_ID_COUNTER: sync::atomic::AtomicU16 = sync::atomic::AtomicU16::new(0);
 
@@ -12,7 +12,7 @@ fn new_client_id() -> protocol::ClientId {
 
 pub fn start<C>(sender: &crate::Sender<C>) -> Result<(), crate::Error>
 where
-    C: Read + AsRawFd + Send,
+    C: Read + Send,
 {
     loop {
         let Some((endpoint_id, endpoint_options, client)) = sender.for_server.recv()? else {

@@ -7,13 +7,35 @@ use crate::tls;
 use std::net;
 #[cfg(feature = "unix")]
 use std::os::unix;
-#[cfg(target_family = "unix")]
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::{
     fs,
     io::{self, Read, Write},
     path, thread,
 };
+
+/// Applies the transferred Unix permission bits to `path`. A no-op on platforms without a
+/// POSIX permission model (e.g. Windows).
+#[cfg(unix)]
+fn set_path_mode(path: &path::Path, mode: u32) -> io::Result<()> {
+    fs::set_permissions(path, fs::Permissions::from_mode(mode))
+}
+#[cfg(not(unix))]
+fn set_path_mode(_path: &path::Path, _mode: u32) -> io::Result<()> {
+    Ok(())
+}
+
+/// Applies the transferred Unix permission bits to an open `file`. A no-op on platforms without
+/// a POSIX permission model (e.g. Windows).
+#[cfg(unix)]
+fn set_file_mode(file: &fs::File, mode: u32) -> io::Result<()> {
+    file.set_permissions(fs::Permissions::from_mode(mode))
+}
+#[cfg(not(unix))]
+fn set_file_mode(_file: &fs::File, _mode: u32) -> io::Result<()> {
+    Ok(())
+}
 
 struct CompletedTransfer {
     size: u64,
@@ -311,8 +333,7 @@ where
                 log::info!("receiving subdirectory \"{}\"", rel_path.display());
                 let subdir = dir_path.join(rel_path);
                 fs::create_dir(&subdir)?;
-                #[cfg(target_family = "unix")]
-                fs::set_permissions(&subdir, fs::Permissions::from_mode(info.mode))?;
+                set_path_mode(&subdir, info.mode)?;
             }
         }
     }
@@ -342,7 +363,7 @@ where
         .open(file_path)?;
 
     log::debug!("setting mode to {}", header.info.mode);
-    file.set_permissions(fs::Permissions::from_mode(header.info.mode))?;
+    set_file_mode(&file, header.info.mode)?;
 
     let mut buffer = vec![0; config.buffer_size];
     let mut cursor = 0;

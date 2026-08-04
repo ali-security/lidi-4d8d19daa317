@@ -9,12 +9,24 @@ use std::io;
 use std::net;
 #[cfg(feature = "unix")]
 use std::os::unix;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::{
     collections, fs,
     io::{Read, Write},
-    os::unix::fs::PermissionsExt,
     path, thread,
 };
+
+/// Returns the entry's Unix permission bits, or a fixed placeholder on platforms without a
+/// POSIX permission model (e.g. Windows).
+#[cfg(unix)]
+fn entry_mode(metadata: &fs::Metadata) -> u32 {
+    metadata.permissions().mode()
+}
+#[cfg(not(unix))]
+fn entry_mode(_metadata: &fs::Metadata) -> u32 {
+    0o644
+}
 
 #[cfg(not(feature = "inotify"))]
 use std::time::Duration;
@@ -471,7 +483,7 @@ where
 
     let start_msg = file::protocol::Message::StartDirTransfer(file::protocol::EntryInfo {
         path: path_to_vec(path, base_dir)?,
-        mode: metadata.permissions().mode(),
+        mode: entry_mode(metadata),
     });
     start_msg.serialize_to(&mut diode)?;
 
@@ -482,7 +494,7 @@ where
             log::info!("sending subdirectory \"{}\"", entry_path.display());
             let message = file::protocol::Message::DirEntry(file::protocol::EntryInfo {
                 path: path_to_vec(entry_path, Some(path))?,
-                mode: metadata.permissions().mode(),
+                mode: entry_mode(metadata),
             });
             message.serialize_to(&mut diode)?;
         } else if metadata.file_type().is_file() {
@@ -530,7 +542,7 @@ where
     let message = file::protocol::Message::FileEntry(file::protocol::FileHeader {
         info: file::protocol::EntryInfo {
             path: path_to_vec(file_path, base_dir)?,
-            mode: metadata.permissions().mode(),
+            mode: entry_mode(metadata),
         },
         file_length: metadata.len(),
     });

@@ -1,0 +1,57 @@
+name: Check builds
+
+on:
+  push:
+    branches: [ master, dev ]
+  pull_request:
+    branches: [ master ]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check-build-windows:
+    name: Check build for Windows
+    runs-on: ubuntu-26.04
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install system dependencies
+        run: |
+          sudo apt update
+          sudo apt full-upgrade
+          sudo apt install just
+
+      - name: Update rust
+        run: rustup update
+
+      - name: Add Windows target to Rust
+        run: rustup target add x86_64-pc-windows-gnu
+
+      - name: Check build for Windows
+        run: just check_windows
+
+  check-build-freebsd:
+    name: Check build for FreeBSD
+    runs-on: ubuntu-26.04
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install system dependencies
+        run: |
+          sudo apt update
+          sudo apt full-upgrade
+          sudo apt install just
+
+      - name: Update rust
+        run: rustup update
+
+      - name: Add FreeBSD target to Rust
+        run: rustup target add x86_64-unknown-freebsd
+
+      - name: Check build for FreeBSD
+        run: just check_freebsd
+

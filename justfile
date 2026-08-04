@@ -26,6 +26,24 @@ fmt:
 check:
     cargo check --all-targets --all-features
 
+# Cross-compilation smoke test for FreeBSD (`rustup target add x86_64-unknown-freebsd`).
+# `tls` is skipped: openssl-sys needs a cross-compiled OpenSSL (OPENSSL_DIR) that isn't
+# set up here. `lidi-bindings` is skipped: its `inotify` feature is Linux-only.
+# FreeBSD is otherwise a Unix target, so Unix sockets and the msg/mmsg socket paths
+# compile and are exercised here.
+check_freebsd:
+    cargo check --target x86_64-unknown-freebsd --workspace --exclude lidi-bindings --all-targets \
+        --no-default-features --features from-tcp,to-tcp,tcp,from-unix,to-unix,unix,receive-native,send-native,receive-msg,send-msg,receive-mmsg,send-mmsg,command-line,hash,heartbeat,log4rs,prometheus
+
+# Cross-compilation smoke test for Windows (`rustup target add x86_64-pc-windows-gnu`).
+# Only the portable native/TCP path is supported: no Unix sockets, no libc msg/mmsg
+# batching (Linux/FreeBSD-only syscalls), no `tls` (see check_freebsd), no `inotify`
+# (`lidi-bindings` skipped). See lidi-command-utils/src/socket.rs for the portable
+# (socket2-based) buffer-size tuning used on this path.
+check_windows:
+    cargo check --target x86_64-pc-windows-gnu --workspace --exclude lidi-bindings --all-targets \
+        --no-default-features --features from-tcp,to-tcp,tcp,receive-native,send-native,command-line,hash,heartbeat,log4rs,prometheus
+
 clippy:
     cargo clippy --all-targets --all-features
 

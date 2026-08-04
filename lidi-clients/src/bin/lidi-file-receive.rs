@@ -1,5 +1,5 @@
 use clap::Parser;
-use std::{net, os::unix::ffi::OsStrExt, path};
+use std::{net, path};
 
 #[derive(clap::Args)]
 #[group(required = true, multiple = false)]
@@ -80,6 +80,60 @@ struct Args {
     output_directory: path::PathBuf,
 }
 
+/// If `chroot` is set, chroots the process into `output_directory` and returns `/` as the new
+/// output directory to use; otherwise returns `output_directory` unchanged.
+///
+/// Exits the process on failure, including when `chroot` is requested on a platform without
+/// `chroot(2)` support (e.g. Windows).
+#[cfg(unix)]
+fn chroot_output_directory(chroot: bool, output_directory: path::PathBuf) -> path::PathBuf {
+    use std::os::unix::ffi::OsStrExt;
+
+    if !chroot {
+        return output_directory;
+    }
+
+    let mut bytes_output_directory = Vec::from(output_directory.as_os_str().as_bytes());
+    bytes_output_directory.push(0);
+
+    let c_output_directory = match std::ffi::CString::from_vec_with_nul(bytes_output_directory) {
+        Ok(res) => res,
+        Err(e) => {
+            log::error!(
+                "failed to convert output directory to C string {}: {e}",
+                output_directory.display()
+            );
+            std::process::exit(1);
+        }
+    };
+
+    if unsafe { libc::chroot(c_output_directory.as_ptr()) } != 0 {
+        #[cfg(not(target_os = "freebsd"))]
+        let errno = unsafe { *libc::__errno_location() };
+        #[cfg(target_os = "freebsd")]
+        let errno = unsafe { *libc::__error() };
+        let err_str = unsafe { std::ffi::CStr::from_ptr(libc::strerror(errno)) }.to_string_lossy();
+        log::error!(
+            "failed to chroot in {}: {err_str}",
+            output_directory.display()
+        );
+        std::process::exit(1);
+    }
+
+    log::info!("chrooted in {}", output_directory.display());
+
+    path::PathBuf::from("/")
+}
+
+#[cfg(not(unix))]
+fn chroot_output_directory(chroot: bool, output_directory: path::PathBuf) -> path::PathBuf {
+    if chroot {
+        log::error!("--chroot is not supported on this platform");
+        std::process::exit(1);
+    }
+    output_directory
+}
+
 fn main() {
     let args = Args::parse();
 
@@ -121,42 +175,7 @@ fn main() {
         delete: false,
     };
 
-    let output_directory = if args.chroot {
-        let mut bytes_output_directory = Vec::from(args.output_directory.as_os_str().as_bytes());
-        bytes_output_directory.push(0);
-
-        let c_output_directory = match std::ffi::CString::from_vec_with_nul(bytes_output_directory)
-        {
-            Ok(res) => res,
-            Err(e) => {
-                log::error!(
-                    "failed to convert output directory to C string {}: {e}",
-                    args.output_directory.display()
-                );
-                std::process::exit(1);
-            }
-        };
-
-        if unsafe { libc::chroot(c_output_directory.as_ptr()) } != 0 {
-            #[cfg(not(target_os = "freebsd"))]
-            let errno = unsafe { *libc::__errno_location() };
-            #[cfg(target_os = "freebsd")]
-            let errno = unsafe { *libc::__error() };
-            let err_str =
-                unsafe { std::ffi::CStr::from_ptr(libc::strerror(errno)) }.to_string_lossy();
-            log::error!(
-                "failed to chroot in {}: {err_str}",
-                args.output_directory.display()
-            );
-            std::process::exit(1);
-        }
-
-        log::info!("chrooted in {}", args.output_directory.display());
-
-        path::PathBuf::from("/")
-    } else {
-        args.output_directory
-    };
+    let output_directory = chroot_output_directory(args.chroot, args.output_directory);
 
     if let Err(e) = lidi_clients::file::receive::receive_files(&config, &output_directory) {
         log::error!("{e}");

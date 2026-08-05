@@ -1,11 +1,11 @@
 name: Doc
 on:
   push:
-    tags: [ v* ]
+    tags: [v*]
+  workflow_dispatch:
 
 jobs:
   doc-build-and-deploy:
-
     runs-on: ubuntu-26.04
 
     steps:

@@ -2,7 +2,8 @@ name: Release Docker
 
 on:
   push:
-    tags: [ v* ]
+    tags: [v*]
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always
@@ -16,7 +17,7 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
   upload:
-    runs-on: ubuntu-26.04 
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v6
       - uses: taiki-e/upload-rust-binary-action@v1
@@ -44,9 +45,9 @@ jobs:
         with:
           images: docker.io/anssi/lidi-${{ matrix.lidi_service }}
           tags: |
-              type=semver,pattern={{version}}
-              type=semver,pattern={{major}}.{{minor}}
-              type=semver,pattern={{major}}
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
       - uses: docker/build-push-action@v5
         with:
           context: .
@@ -54,5 +55,3 @@ jobs:
           target: ${{ matrix.lidi_service }}
           tags: ${{ steps.docker_meta.outputs.tags }}
           labels: ${{ steps.docker_meta.outputs.labels }}
-      
-

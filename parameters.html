@@ -6,21 +6,21 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Command line parameters &mdash; Lidi 2.0.0 documentation</title>
-      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=80d5e7a1" />
+  <title>Command line parameters &mdash; Lidi 3.0.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
 
   
       <script src="_static/jquery.js?v=5d32c60e"></script>
       <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="_static/documentation_options.js?v=51b770b3"></script>
+      <script src="_static/documentation_options.js?v=acc74ff5"></script>
       <script src="_static/doctools.js?v=fd6eb6e6"></script>
       <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
     <script src="_static/js/theme.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
     <link rel="next" title="Tweaking parameters" href="tweaking.html" />
-    <link rel="prev" title="Getting started" href="gstarted.html" /> 
+    <link rel="prev" title="Building lidi" href="building.html" /> 
 </head>
 
 <body class="wy-body-for-nav"> 
@@ -45,24 +45,25 @@
               <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="gstarted.html">Getting started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="building.html">Building lidi</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Command line parameters</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#configuration-file-format">Configuration file format</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#overview">Overview</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#adresses-and-ports">Adresses and ports</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="#tcp-data-source">TCP data source</a></li>
-<li class="toctree-l3"><a class="reference internal" href="#tcp-data-destination">TCP data destination</a></li>
-<li class="toctree-l3"><a class="reference internal" href="#unix-data-source">Unix data source</a></li>
-<li class="toctree-l3"><a class="reference internal" href="#unix-data-destination">Unix data destination</a></li>
-<li class="toctree-l3"><a class="reference internal" href="#udp-transfer">UDP transfer</a></li>
-</ul>
-</li>
+<li class="toctree-l2"><a class="reference internal" href="#endpoints-data-sources-and-destinations">Endpoints (data sources and destinations)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#udp-transfer">UDP transfer</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#block-and-packet-sizes">Block and packet sizes</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#multiplexing">Multiplexing</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#multithreading">Multithreading</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#timeouts">Timeouts</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#queue-sizes">Queue sizes</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#heartbeat">Heartbeat</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#logging">Logging</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#prometheus-metrics">Prometheus metrics</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#tls">TLS</a></li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="tweaking.html">Tweaking parameters</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tc_ratelimiter.html">Rate limiting with tc</a></li>
 <li class="toctree-l1"><a class="reference internal" href="files.html">Sending files with Lidi</a></li>
 <li class="toctree-l1"><a class="reference internal" href="udp.html">Sending UDP with Lidi</a></li>
 <li class="toctree-l1"><a class="reference internal" href="oneshot.html">Oneshot Lidi</a></li>
@@ -94,69 +95,114 @@
              
   <section id="command-line-parameters">
 <span id="id1"></span><h1>Command line parameters<a class="headerlink" href="#command-line-parameters" title="Link to this heading"></a></h1>
-<p>When running <cite>diode-send</cite> and <cite>diode-receive</cite> with cargo, command line parameters must appear after after double-hyphen separator. For example, to display all available options for the sender part:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>$<span class="w"> </span>cargo<span class="w"> </span>run<span class="w"> </span>--release<span class="w"> </span>--bin<span class="w"> </span>diode-send<span class="w"> </span>--<span class="w"> </span>--help
+<p>Lidi is configured through a combination of a TOML configuration file and command line arguments. Both <code class="docutils literal notranslate"><span class="pre">lidi-send</span></code> and <code class="docutils literal notranslate"><span class="pre">lidi-receive</span></code> share the same invocation model:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>lidi-send    [OPTIONS] [config_file_path]
+lidi-receive [OPTIONS] [config_file_path]
 </pre></div>
 </div>
+<p>The configuration file is an optional positional argument. When it is given, it is read first, then any command line argument overrides the corresponding value from the file. When no configuration file is given, values come from command line arguments and built-in defaults.</p>
+<p>To display all available options for either part:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>$<span class="w"> </span>lidi-send<span class="w"> </span>--help
+$<span class="w"> </span>lidi-receive<span class="w"> </span>--help
+</pre></div>
+</div>
+<p>When running with cargo, command line parameters must appear after the double-hyphen separator:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>$<span class="w"> </span>cargo<span class="w"> </span>run<span class="w"> </span>--release<span class="w"> </span>--bin<span class="w"> </span>lidi-send<span class="w"> </span>--<span class="w"> </span>--help
+</pre></div>
+</div>
+<section id="configuration-file-format">
+<h2>Configuration file format<a class="headerlink" href="#configuration-file-format" title="Link to this heading"></a></h2>
+<p>The configuration file is a TOML file. Parameters common to both sides live at the top level, while side-specific parameters live in a <code class="docutils literal notranslate"><span class="pre">[send]</span></code> or <code class="docutils literal notranslate"><span class="pre">[receive]</span></code> table (only the table matching the running binary is used). Example configuration files are provided in the <code class="docutils literal notranslate"><span class="pre">config_examples/</span></code> directory of the repository.</p>
+<div class="highlight-toml notranslate"><div class="highlight"><pre><span></span><span class="c1"># Common parameters (must be identical on sender and receiver)</span>
+<span class="n">mtu</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">9000</span>
+<span class="n">ports</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="mi">5001</span><span class="p">,</span><span class="w"> </span><span class="mi">5002</span><span class="p">,</span><span class="w"> </span><span class="mi">5003</span><span class="p">,</span><span class="w"> </span><span class="mi">5004</span><span class="p">]</span>
+<span class="n">block</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">220000</span>
+<span class="n">repair</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span>
+<span class="n">max_clients</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">2</span>
+<span class="n">heartbeat</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">10</span>
+
+<span class="k">[send]</span>
+<span class="n">from</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="w"> </span><span class="s2">&quot;tcp:127.0.0.1:4000&quot;</span><span class="w"> </span><span class="p">]</span><span class="w">   </span><span class="c1"># data source endpoint(s)</span>
+<span class="n">to</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;127.0.0.1&quot;</span><span class="w">                   </span><span class="c1"># receiver IP address</span>
+<span class="n">to_bind</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;0.0.0.0:0&quot;</span>
+<span class="n">mode</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;mmsg&quot;</span>
+
+<span class="k">[receive]</span>
+<span class="n">to</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="w"> </span><span class="s2">&quot;tcp:127.0.0.1:6000&quot;</span><span class="w"> </span><span class="p">]</span><span class="w">      </span><span class="c1"># data destination endpoint(s)</span>
+<span class="n">from</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;127.0.0.1&quot;</span><span class="w">                 </span><span class="c1"># IP to listen on for UDP packets</span>
+<span class="n">mode</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;mmsg&quot;</span>
+<span class="n">reset_timeout</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">2</span>
+</pre></div>
+</div>
+<p>Every configuration-file key has a command line equivalent obtained by replacing underscores with hyphens (for example <code class="docutils literal notranslate"><span class="pre">max_clients</span></code> becomes <code class="docutils literal notranslate"><span class="pre">--max-clients</span></code>).</p>
+</section>
 <section id="overview">
 <h2>Overview<a class="headerlink" href="#overview" title="Link to this heading"></a></h2>
 <p>Here is a diagram of the components involved in an example usage of lidi, annotated with command line parameters:</p>
 <img alt="_images/schema.svg" src="_images/schema.svg" />
 <div class="admonition note">
 <p class="admonition-title">Note</p>
-<p>Parameters that are displayed in the gray box must be the same of both sides (sender and receiver) of lidi.</p>
+<p>Parameters that are displayed in the gray box must be the same on both sides (sender and receiver) of lidi. In particular the common parameters <code class="docutils literal notranslate"><span class="pre">--mtu</span></code>, <code class="docutils literal notranslate"><span class="pre">--ports</span></code>, <code class="docutils literal notranslate"><span class="pre">--block</span></code> and <code class="docutils literal notranslate"><span class="pre">--repair</span></code> have to be identical, and the receiver’s <code class="docutils literal notranslate"><span class="pre">--from</span></code> address must match the sender’s <code class="docutils literal notranslate"><span class="pre">--to</span></code> address.</p>
 </div>
-<p>Following, we provide some details about each command line options.</p>
+<p>Following, we provide some details about each parameter.</p>
 </section>
-<section id="adresses-and-ports">
-<h2>Adresses and ports<a class="headerlink" href="#adresses-and-ports" title="Link to this heading"></a></h2>
-<p>As shown in the <a class="reference internal" href="gstarted.html#getting-started"><span class="std std-ref">Getting started</span></a> chapter, default values work well for testing the diode on a single machine. But for real application, ip addresses and ports must be configured properly. There are three points in the diode chain where those settings should be provided.</p>
-<section id="tcp-data-source">
-<h3>TCP data source<a class="headerlink" href="#tcp-data-source" title="Link to this heading"></a></h3>
-<p>The diode-send side gets data from TCP connections. It is necessary to specify ip address and port in which TCP connections will be accepted with the following parameter:</p>
-<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>--from-tcp &lt;ip:port&gt;
+<section id="endpoints-data-sources-and-destinations">
+<h2>Endpoints (data sources and destinations)<a class="headerlink" href="#endpoints-data-sources-and-destinations" title="Link to this heading"></a></h2>
+<p>Data enters <code class="docutils literal notranslate"><span class="pre">lidi-send</span></code> and leaves <code class="docutils literal notranslate"><span class="pre">lidi-receive</span></code> through <em>endpoints</em>. An endpoint is described by a string starting with a <code class="docutils literal notranslate"><span class="pre">tcp</span></code>, <code class="docutils literal notranslate"><span class="pre">tls</span></code> or <code class="docutils literal notranslate"><span class="pre">unix</span></code> prefix, optionally followed by <code class="docutils literal notranslate"><span class="pre">[options]</span></code>, then the address:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>tcp:&lt;ip:port&gt;              tcp[&lt;options&gt;]:&lt;ip:port&gt;
+tls:&lt;ip:port&gt;              tls[&lt;options&gt;]:&lt;ip:port&gt;
+unix:&lt;socket path&gt;         unix[&lt;options&gt;]:&lt;socket path&gt;
 </pre></div>
 </div>
-<p>Default value is 127.0.0.1:5000.</p>
-</section>
-<section id="tcp-data-destination">
-<h3>TCP data destination<a class="headerlink" href="#tcp-data-destination" title="Link to this heading"></a></h3>
-<p>On the diode-receive side, data will be sent to TCP connected clients. To specify listening ip and TCP port:</p>
-<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>--to-tcp &lt;ip:port&gt;
+<p>where the optional <code class="docutils literal notranslate"><span class="pre">[...]</span></code> part, placed immediately after the prefix, carries per-endpoint options separated by commas. Two options are supported:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">flush</span></code> (default <code class="docutils literal notranslate"><span class="pre">false</span></code>): on the sender side, encode and send a RaptorQ block after every <code class="docutils literal notranslate"><span class="pre">read()</span></code> instead of waiting for a full block; on the receiver side, flush the write buffer after every write. This is required for long-lived streams that never close (see <a class="reference internal" href="udp.html#sending-udp-with-lidi"><span class="std std-ref">Sending UDP with Lidi</span></a>).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">hash</span></code> (default <code class="docutils literal notranslate"><span class="pre">false</span></code>): compute (sender) or verify (receiver) a hash of the transferred data. Requires the <code class="docutils literal notranslate"><span class="pre">hash</span></code> compilation feature.</p></li>
+</ul>
+<p>Examples:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>tcp:127.0.0.1:5000
+tcp[flush=true]:127.0.0.1:5000
+tls[flush=true,hash=true]:127.0.0.1:5000
+unix:/tmp/lidi.socket
 </pre></div>
 </div>
-</section>
-<section id="unix-data-source">
-<h3>Unix data source<a class="headerlink" href="#unix-data-source" title="Link to this heading"></a></h3>
-<p>The diode-send side gets data from Unix connections. It is necessary to specify ip address and port in which Unix connections will be accepted with the following parameter:</p>
-<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>--from-unix &lt;path&gt;
+<p>On the sender side, one or several source endpoints are given with:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>--from &lt;endpoint&gt;
 </pre></div>
 </div>
-</section>
-<section id="unix-data-destination">
-<h3>Unix data destination<a class="headerlink" href="#unix-data-destination" title="Link to this heading"></a></h3>
-<p>On the diode-receive side, data will be sent to Unix connected clients. To specify listening Unix socket path:</p>
-<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>--to-unix &lt;path&gt;
+<p>On the receiver side, one or several destination endpoints are given with:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>--to &lt;endpoint&gt;
 </pre></div>
 </div>
+<p>The option may be repeated to declare several endpoints. In a configuration file, <code class="docutils literal notranslate"><span class="pre">from</span></code> (send) and <code class="docutils literal notranslate"><span class="pre">to</span></code> (receive) are TOML arrays of endpoint strings.</p>
 </section>
 <section id="udp-transfer">
-<h3>UDP transfer<a class="headerlink" href="#udp-transfer" title="Link to this heading"></a></h3>
-<p>UDP transfer is the core of the diode. Settings ip addresses and port is necessary. On the sender side:</p>
-<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>--to &lt;ip:port&gt;
+<h2>UDP transfer<a class="headerlink" href="#udp-transfer" title="Link to this heading"></a></h2>
+<p>UDP transfer is the core of the diode.</p>
+<p>On the sender side, the destination is the receiver’s IP address or hostname:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>--to &lt;ip|hostname&gt;
 </pre></div>
 </div>
-<p>describe where to send data and is defaulted to 127.0.0.1:6000, and socket is bound to address and port according to:</p>
+<p>which defaults to <code class="docutils literal notranslate"><span class="pre">127.0.0.1</span></code>. The source UDP socket is bound according to:</p>
 <div class="highlight-none notranslate"><div class="highlight"><pre><span></span>--to-bind &lt;ip:port&gt;
 </pre></div>
 </div>
-<p>which is defaulted to 0.0.0.0:0. This default value should work in many cases.</p>
+<p>which defaults to <code class="docutils literal notranslate"><span class="pre">0.0.0.0:0</span></code>. This default value should work in many cases.</p>
 <p>On the receiver side, the option:</p>
-<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>--from &lt;ip:port&gt;
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>--from &lt;ip|hostname&gt;
 </pre></div>
 </div>
-<p>defines ip and port to listen for incoming UDP packets, and should be set to the same value as <cite>–to</cite>.</p>
-</section>
+<p>defines the address to listen on for incoming UDP packets, and defaults to <code class="docutils literal notranslate"><span class="pre">127.0.0.1</span></code>.</p>
+<p>The UDP ports used for the transfer are common to both sides and are given as a comma-separated list:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>--ports &lt;port[,port]*&gt;
+</pre></div>
+</div>
+<p>which defaults to <code class="docutils literal notranslate"><span class="pre">5000</span></code>. Using several ports enables multithreaded UDP send/receive (see <a class="reference internal" href="#multithreading">Multithreading</a> below). The list must be identical on both sides.</p>
+<p>The method used to send and receive UDP datagrams can be selected with:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>--mode &lt;native|msg|mmsg&gt;
+</pre></div>
+</div>
+<p>When compiled with all UDP modes (the default), the default mode is <code class="docutils literal notranslate"><span class="pre">mmsg</span></code> (<code class="docutils literal notranslate"><span class="pre">sendmmsg</span></code> / <code class="docutils literal notranslate"><span class="pre">recvmmsg</span></code>), which batches datagrams for higher throughput.</p>
 </section>
 <section id="block-and-packet-sizes">
 <h2>Block and packet sizes<a class="headerlink" href="#block-and-packet-sizes" title="Link to this heading"></a></h2>
@@ -167,62 +213,101 @@
 <li><p>into <cite>packets</cite> at the UDP transfer level.</p></li>
 </ul>
 </div></blockquote>
-<p>One can have effect on the slicing sizes to achieve optimal performances by using several command line options.
-Firstly, MTU can be set on both diodes side, and should be set to the same values:</p>
-<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>--to-mtu &lt;nb_bytes&gt;
-  on the sender side
+<p>One can have an effect on the slicing sizes to achieve optimal performances by using several command line options. These parameters are common to both sides and must be set to the same values.</p>
+<p>Firstly, the MTU can be set on both sides:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>--mtu &lt;nb_bytes&gt;
 </pre></div>
 </div>
-<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>--from-mtu &lt;nb_bytes&gt;
-  on the receiver side
-</pre></div>
-</div>
-<p>Default MTU values are set to 1500 and can be increased when network devices allow for higher values.</p>
-<p>Then, on the logical level, fountain codes operates on blocks. If blocks reordering produces errors, they can be increased too. Repair packets represent redundancy and are used by fountain codes to ensure data reconstruction. On both sides, parameters have the same name and must be set to the same values:</p>
+<p>The default MTU value is <code class="docutils literal notranslate"><span class="pre">1500</span></code> and can be increased (up to <code class="docutils literal notranslate"><span class="pre">9000</span></code>, i.e. jumbo frames) when network devices allow for higher values. The minimum accepted value is <code class="docutils literal notranslate"><span class="pre">1280</span></code> (the IPv6 minimum MTU).</p>
+<p>Then, on the logical level, fountain codes operate on blocks. Repair packets represent redundancy and are used by fountain codes to ensure data reconstruction despite packet loss:</p>
 <div class="highlight-none notranslate"><div class="highlight"><pre><span></span>--block &lt;nb_bytes&gt;
 
 --repair &lt;percentage&gt;
 </pre></div>
 </div>
+<p><code class="docutils literal notranslate"><span class="pre">--block</span></code> defaults to <code class="docutils literal notranslate"><span class="pre">220000</span></code> bytes and <code class="docutils literal notranslate"><span class="pre">--repair</span></code> defaults to <code class="docutils literal notranslate"><span class="pre">1</span></code> (percent). The repair percentage must be strictly lower than <code class="docutils literal notranslate"><span class="pre">100</span></code>.</p>
 <p>See the <a class="reference internal" href="tweaking.html#tweaking-parameters"><span class="std std-ref">Tweaking parameters</span></a> chapter for more details on how to choose optimal values for your particular use case and devices.</p>
 </section>
 <section id="multiplexing">
 <h2>Multiplexing<a class="headerlink" href="#multiplexing" title="Link to this heading"></a></h2>
-<p>Lidi can handle several transfers in parallel, so that big data transfer doesn’t prevent other data chunks to be handled. The number of transfers in parallel is adapted by lidi according to the number of TCP clients that can be connected simultaneously.It can be configured on both sides with the option:</p>
+<p>Lidi can handle several transfers in parallel, so that a big data transfer doesn’t prevent other data chunks from being handled. The maximal number of simultaneous client connections is configured on both sides with:</p>
 <div class="highlight-none notranslate"><div class="highlight"><pre><span></span>--max-clients &lt;nb&gt;
 </pre></div>
 </div>
-<p>which has its default value set to 2.</p>
-<p>Although not strictly required nor enforced by lidi, the number of TCP clients on sender side and on receiver side will be equals in mosts use cases for better results.</p>
+<p>which has its default value set to <code class="docutils literal notranslate"><span class="pre">2</span></code>.</p>
+<p>Although not strictly required nor enforced by lidi, the number of clients on the sender side and on the receiver side will be equal in most use cases for better results.</p>
 </section>
 <section id="multithreading">
 <h2>Multithreading<a class="headerlink" href="#multithreading" title="Link to this heading"></a></h2>
-<p>To ensure data integrity through the UDP link, Lidi uses RaptorQ fountain codes. This means that logical block of data need to be encoded (sender side) and then decoded (receiver side). Several threads can be spawned to parallelized such computations, with the following options:</p>
-<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>--encode-threads &lt;nb&gt;
-  (sender side, default: 1)
-
---decode-threads &lt;nb&gt;
-  (receiver side, default: 1).
-</pre></div>
-</div>
+<p>To ensure data integrity through the UDP link, lidi uses RaptorQ fountain codes. Blocks of data are encoded (sender side) and decoded (receiver side). Encoding and decoding are parallelized across the UDP ports declared with <code class="docutils literal notranslate"><span class="pre">--ports</span></code>: each port is served by its own send/receive worker, so declaring several ports spreads the RaptorQ computations over several threads.</p>
 </section>
 <section id="timeouts">
 <h2>Timeouts<a class="headerlink" href="#timeouts" title="Link to this heading"></a></h2>
-<p>Since lidi uses UDP protocol to transfer data, blocks and datagrams can be reordered.
-Fountain codes are used to ensure data integrity despite possible transfer reordering and losses. Also, it can be harder for the receiving part to know that a particular transfer is done, since an EOF-like marker can be received before the end of the data, or simply lost.
-Thus, a configurable timeout is used in lidi to decide when to reset fountain code status:</p>
+<p>Since lidi uses the UDP protocol to transfer data, blocks and datagrams can be reordered or lost. Fountain codes are used to ensure data integrity despite reordering and losses. Also, it can be harder for the receiving part to know that a particular transfer is done, since an EOF-like marker can be received before the end of the data, or simply lost.</p>
+<p>Thus, a configurable timeout is used on the receiver side to decide when to reset the RaptorQ internal state:</p>
 <div class="highlight-none notranslate"><div class="highlight"><pre><span></span>--reset-timeout &lt;nb_secs&gt;
   (receiver side, default: 2)
+</pre></div>
+</div>
+<p>The receiver can also close a client connection when no data has been received for a client for a given duration:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>--abort-timeout &lt;nb_secs&gt;
+  (receiver side, disabled by default)
+</pre></div>
+</div>
+</section>
+<section id="queue-sizes">
+<h2>Queue sizes<a class="headerlink" href="#queue-sizes" title="Link to this heading"></a></h2>
+<p>On the receiver side, the internal pipeline queues can be bounded to limit memory usage. A value of <code class="docutils literal notranslate"><span class="pre">0</span></code> (the default) means unbounded:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>--client-queue-size &lt;nb&gt;     Maximum number of RaptorQ blocks buffered per client
+--reblock-queue-size &lt;nb&gt;    Maximum items in the reblock pipeline queue
+--dispatch-queue-size &lt;nb&gt;   Maximum items in the dispatch pipeline queue
+--clients-queue-size &lt;nb&gt;    Maximum items in the clients pipeline queue
 </pre></div>
 </div>
 </section>
 <section id="heartbeat">
 <h2>Heartbeat<a class="headerlink" href="#heartbeat" title="Link to this heading"></a></h2>
-<p>Since the purpose of the diode is to only allow one-way data traffic, the sender cannot be aware if a receiver is set up or not. But heartbeat messages are regularly sent through the diode so that the receiver can be aware of a sender disconnection. Heartbeat times can be set with the following option on both sides:</p>
+<p>Since the purpose of the diode is to only allow one-way data traffic, the sender cannot be aware if a receiver is set up or not. But heartbeat messages can be regularly sent through the diode so that the receiver can be aware of a sender disconnection. The heartbeat interval is a common parameter, expressed in seconds:</p>
 <div class="highlight-none notranslate"><div class="highlight"><pre><span></span>--heartbeat &lt;nb_secs&gt;
 </pre></div>
 </div>
-<p>The default values are 5 seconds for the sender (i.e. a heartbeat message is sent every 5 seconds) and 10 seconds for the receiver (i.e. warnings are displayed whenever during 10 seconds no heartbeat message was received). Due to latency, timeouts and network load, the receiver value must always be greater than the sender value.</p>
+<p>A value of <code class="docutils literal notranslate"><span class="pre">0</span></code> (or leaving the parameter unset) disables the heartbeat entirely. When enabled, the sender sends a heartbeat block every <code class="docutils literal notranslate"><span class="pre">nb_secs</span></code> seconds, and the receiver warns whenever no heartbeat has been received for longer than that interval (the receiver adds a 25% grace period to account for latency and network load).</p>
+</section>
+<section id="logging">
+<h2>Logging<a class="headerlink" href="#logging" title="Link to this heading"></a></h2>
+<p>The log verbosity of each side is set with:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>--log &lt;Off|Error|Warn|Info|Debug|Trace&gt;
+  (default: Info)
+</pre></div>
+</div>
+<p>By default, logging is emitted on the terminal. When lidi is compiled with the <code class="docutils literal notranslate"><span class="pre">log4rs</span></code> feature, a <a class="reference external" href="https://docs.rs/log4rs/">log4rs</a> YAML configuration file can be provided to customize log routing (files, rotation, etc.):</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>--log4rs-config &lt;path&gt;
+</pre></div>
+</div>
+<p>An example log4rs configuration is available at <code class="docutils literal notranslate"><span class="pre">config_examples/lidi_log4rs.yml</span></code>.</p>
+</section>
+<section id="prometheus-metrics">
+<h2>Prometheus metrics<a class="headerlink" href="#prometheus-metrics" title="Link to this heading"></a></h2>
+<p>When lidi is compiled with the <code class="docutils literal notranslate"><span class="pre">prometheus</span></code> feature, an HTTP endpoint exposing Prometheus metrics can be enabled on each side with:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>--prometheus-listen &lt;ip:port&gt;
+</pre></div>
+</div>
+<p>The list of exported metrics is documented in <code class="docutils literal notranslate"><span class="pre">doc/prometheus_metrics.md</span></code>.</p>
+</section>
+<section id="tls">
+<h2>TLS<a class="headerlink" href="#tls" title="Link to this heading"></a></h2>
+<p>When TCP data sources or destinations are declared as <code class="docutils literal notranslate"><span class="pre">tls:</span></code> endpoints, the TLS parameters are configured with the following options (or the <code class="docutils literal notranslate"><span class="pre">[send.tls]</span></code> / <code class="docutils literal notranslate"><span class="pre">[receive.tls]</span></code> tables in the configuration file):</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>--tls-key &lt;path&gt;           Path to the PEM private key file
+--tls-certificate &lt;path&gt;   Path to the PEM certificate file
+--tls-ca &lt;path&gt;            Path to the PEM accepted CA file
+--tls-min &lt;version&gt;        Minimum accepted TLS version (tls1_1, tls1_2, tls1_3)
+--tls-method &lt;method&gt;      TLS method (mozilla_intermediate_v4, mozilla_intermediate_v5,
+                           mozilla_modern_v4, mozilla_modern_v5)
+--tls-ciphers &lt;ciphers&gt;    Accepted TLS ciphers
+--tls-groups &lt;groups&gt;      Accepted TLS groups
+</pre></div>
+</div>
+<p>The default minimum version is <code class="docutils literal notranslate"><span class="pre">tls1_3</span></code> and the default method is <code class="docutils literal notranslate"><span class="pre">mozilla_modern_v5</span></code>. When a CA file is provided, peer certificate verification is enforced (mutual TLS). A complete example is provided in <code class="docutils literal notranslate"><span class="pre">config_examples/tls.config.toml</span></code>.</p>
 </section>
 </section>
 
@@ -230,7 +315,7 @@ Thus, a configurable timeout is used in lidi to decide when to reset fountain co
            </div>
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
-        <a href="gstarted.html" class="btn btn-neutral float-left" title="Getting started" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="building.html" class="btn btn-neutral float-left" title="Building lidi" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
         <a href="tweaking.html" class="btn btn-neutral float-right" title="Tweaking parameters" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 

@@ -6,14 +6,14 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Sending UDP with Lidi &mdash; Lidi 2.0.0 documentation</title>
-      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=80d5e7a1" />
+  <title>Sending UDP with Lidi &mdash; Lidi 3.0.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
 
   
       <script src="_static/jquery.js?v=5d32c60e"></script>
       <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="_static/documentation_options.js?v=51b770b3"></script>
+      <script src="_static/documentation_options.js?v=acc74ff5"></script>
       <script src="_static/doctools.js?v=fd6eb6e6"></script>
       <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
     <script src="_static/js/theme.js"></script>
@@ -45,10 +45,16 @@
               <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="gstarted.html">Getting started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="building.html">Building lidi</a></li>
 <li class="toctree-l1"><a class="reference internal" href="parameters.html">Command line parameters</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tweaking.html">Tweaking parameters</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tc_ratelimiter.html">Rate limiting with tc</a></li>
 <li class="toctree-l1"><a class="reference internal" href="files.html">Sending files with Lidi</a></li>
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Sending UDP with Lidi</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Sending UDP with Lidi</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#required-flush-true-configuration">Required <code class="docutils literal notranslate"><span class="pre">flush=true</span></code> configuration</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#minimal-example-configuration">Minimal example configuration</a></li>
+</ul>
+</li>
 <li class="toctree-l1"><a class="reference internal" href="oneshot.html">Oneshot Lidi</a></li>
 </ul>
 
@@ -77,30 +83,34 @@
            <div itemprop="articleBody">
              
   <section id="sending-udp-with-lidi">
-<h1>Sending UDP with Lidi<a class="headerlink" href="#sending-udp-with-lidi" title="Link to this heading"></a></h1>
-<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>Send UDP datagrams to diode-receive-udp.
+<span id="id1"></span><h1>Sending UDP with Lidi<a class="headerlink" href="#sending-udp-with-lidi" title="Link to this heading"></a></h1>
+<p><code class="docutils literal notranslate"><span class="pre">lidi-udp-send</span></code> and <code class="docutils literal notranslate"><span class="pre">lidi-udp-receive</span></code> form a tunnel that forwards UDP
+datagrams through the lidi diode.  Each datagram is encapsulated with an
+8-byte size header on the TCP stream so that the receiver can reconstruct
+exact datagram boundaries.</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>Send UDP datagrams to lidi-udp-receive.
 
-Usage: diode-send-udp [OPTIONS] --from &lt;ip:port&gt; &lt;--to-tcp &lt;ip:port&gt;|--to-unix &lt;path&gt;&gt;
+Usage: lidi-udp-send [OPTIONS] --from &lt;ip:port&gt; &lt;--to-tcp &lt;ip:port&gt;|--to-unix &lt;path&gt;&gt;
 
 Options:
       --log-level &lt;Off|Error|Warn|Info|Debug|Trace&gt;  Log level [default: Info]
-      --to-tcp &lt;ip:port&gt;                             TCP address and port to connect to diode-send
-      --to-unix &lt;path&gt;                               Path to Unix socket to connect to diode-send
+      --to-tcp &lt;ip:port&gt;                             TCP address and port to connect to lidi-send
+      --to-unix &lt;path&gt;                               Path to Unix socket to connect to lidi-send
       --from &lt;ip:port&gt;                               IP address and port to receive UDP packets
   -h, --help                                         Print help
 </pre></div>
 </div>
-<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>Receive UDP packets sent by diode-send-udp.
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>Receive UDP packets sent by lidi-udp-send.
 
-Usage: diode-receive-udp [OPTIONS] --to-bind &lt;ip:port&gt; --to &lt;ip:port&gt; &lt;--from-tcp &lt;ip:port&gt;|--from-unix &lt;path&gt;&gt;
+Usage: lidi-udp-receive [OPTIONS] --to-bind &lt;ip:port&gt; --to &lt;ip:port&gt; &lt;--from-tcp &lt;ip:port&gt;|--from-unix &lt;path&gt;&gt;
 
 Options:
       --log-level &lt;Off|Error|Warn|Info|Debug|Trace&gt;
           Log level [default: Info]
       --from-tcp &lt;ip:port&gt;
-          IP address and port to accept TCP connections from diode-receive
+          IP address and port to accept TCP connections from lidi-receive
       --from-unix &lt;path&gt;
-          Path of Unix socket to accept Unix connections from diode-receive
+          Path of Unix socket to accept Unix connections from lidi-receive
       --to-bind &lt;ip:port&gt;
           IP address and port to send UDP packets from
       --to &lt;ip:port&gt;
@@ -109,6 +119,65 @@ Options:
           Print help
 </pre></div>
 </div>
+<section id="required-flush-true-configuration">
+<h2>Required <code class="docutils literal notranslate"><span class="pre">flush=true</span></code> configuration<a class="headerlink" href="#required-flush-true-configuration" title="Link to this heading"></a></h2>
+<p>Unlike file or stream transfers, the UDP tunnel keeps both TCP connections
+open for the entire lifetime of the session — <code class="docutils literal notranslate"><span class="pre">lidi-udp-send</span></code> never closes
+its connection to <code class="docutils literal notranslate"><span class="pre">lidi-send</span></code>, and <code class="docutils literal notranslate"><span class="pre">lidi-receive</span></code> never closes its
+connection to <code class="docutils literal notranslate"><span class="pre">lidi-udp-receive</span></code>.  This means lidi never receives an EOF
+that would normally trigger flushing of pending data.  Without explicit
+<code class="docutils literal notranslate"><span class="pre">flush=true</span></code> on both endpoints, datagrams accumulate silently and are never
+forwarded.</p>
+<p><strong>lidi-send ``from`` endpoint — mandatory ``flush=true``</strong></p>
+<p><code class="docutils literal notranslate"><span class="pre">lidi-send</span></code> fills a RaptorQ block (<code class="docutils literal notranslate"><span class="pre">block</span></code> bytes, default 220 000) before
+encoding and sending it.  If datagrams are smaller than <code class="docutils literal notranslate"><span class="pre">block</span></code>, the block
+is never full and no data is ever sent.  Setting <code class="docutils literal notranslate"><span class="pre">flush=true</span></code> tells
+<code class="docutils literal notranslate"><span class="pre">lidi-send</span></code> to encode and send a block after every <code class="docutils literal notranslate"><span class="pre">read()</span></code> call,
+regardless of how full it is:</p>
+<div class="highlight-toml notranslate"><div class="highlight"><pre><span></span><span class="c1"># lidi-send configuration</span>
+<span class="k">[send]</span>
+<span class="n">from</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="w"> </span><span class="s2">&quot;tcp[flush=true]:127.0.0.1:4000&quot;</span><span class="w"> </span><span class="p">]</span>
+</pre></div>
+</div>
+<p><strong>lidi-receive ``to`` endpoint — mandatory ``flush=true``</strong></p>
+<p><code class="docutils literal notranslate"><span class="pre">lidi-receive</span></code> writes decoded data to <code class="docutils literal notranslate"><span class="pre">lidi-udp-receive</span></code> through a
+buffered writer.  Without <code class="docutils literal notranslate"><span class="pre">flush=true</span></code>, the buffer is only flushed when an
+<code class="docutils literal notranslate"><span class="pre">End</span></code> block arrives (i.e. when the sender closes the connection), which
+never happens with the UDP tunnel.  Setting <code class="docutils literal notranslate"><span class="pre">flush=true</span></code> forces a flush
+after each write:</p>
+<div class="highlight-toml notranslate"><div class="highlight"><pre><span></span><span class="c1"># lidi-receive configuration</span>
+<span class="k">[receive]</span>
+<span class="n">to</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="w"> </span><span class="s2">&quot;tcp[flush=true]:127.0.0.1:6000&quot;</span><span class="w"> </span><span class="p">]</span>
+</pre></div>
+</div>
+</section>
+<section id="minimal-example-configuration">
+<h2>Minimal example configuration<a class="headerlink" href="#minimal-example-configuration" title="Link to this heading"></a></h2>
+<div class="highlight-toml notranslate"><div class="highlight"><pre><span></span><span class="c1"># lidi-send.toml</span>
+<span class="n">ports</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="mi">5000</span><span class="p">]</span>
+
+<span class="k">[send]</span>
+<span class="n">from</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="w"> </span><span class="s2">&quot;tcp[flush=true]:127.0.0.1:4000&quot;</span><span class="w"> </span><span class="p">]</span><span class="w">   </span><span class="c1"># lidi-udp-send connects here</span>
+<span class="n">to</span><span class="w">   </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;192.168.1.2&quot;</span>
+</pre></div>
+</div>
+<div class="highlight-toml notranslate"><div class="highlight"><pre><span></span><span class="c1"># lidi-receive.toml</span>
+<span class="n">ports</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="mi">5000</span><span class="p">]</span>
+
+<span class="k">[receive]</span>
+<span class="n">from</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s2">&quot;0.0.0.0&quot;</span>
+<span class="n">to</span><span class="w">   </span><span class="o">=</span><span class="w"> </span><span class="p">[</span><span class="w"> </span><span class="s2">&quot;tcp[flush=true]:127.0.0.1:6000&quot;</span><span class="w"> </span><span class="p">]</span><span class="w">   </span><span class="c1"># lidi-udp-receive listens here</span>
+</pre></div>
+</div>
+<p>Start the components in this order:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>lidi-receive<span class="w"> </span>lidi-receive.toml<span class="w"> </span><span class="p">&amp;</span>
+lidi-send<span class="w">    </span>lidi-send.toml<span class="w">    </span><span class="p">&amp;</span>
+
+lidi-udp-receive<span class="w"> </span>--from-tcp<span class="w"> </span><span class="m">127</span>.0.0.1:6000<span class="w"> </span>--to-bind<span class="w"> </span><span class="m">127</span>.0.0.1:0<span class="w"> </span>--to<span class="w"> </span><span class="m">127</span>.0.0.1:7000<span class="w"> </span><span class="p">&amp;</span>
+lidi-udp-send<span class="w">    </span>--to-tcp<span class="w">   </span><span class="m">127</span>.0.0.1:4000<span class="w"> </span>--from<span class="w"> </span><span class="m">127</span>.0.0.1:5010
+</pre></div>
+</div>
+</section>
 </section>
 
 

@@ -1,0 +1,290 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Building lidi &mdash; Lidi 3.0.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=acc74ff5"></script>
+      <script src="_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Command line parameters" href="parameters.html" />
+    <link rel="prev" title="Getting started" href="gstarted.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            Lidi
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="gstarted.html">Getting started</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Building lidi</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#prerequisites">Prerequisites</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#building">Building</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#cargo-workspace-layout">Cargo workspace layout</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#selecting-compilation-features">Selecting compilation features</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#sender-features-lidi-send">Sender features (<code class="docutils literal notranslate"><span class="pre">lidi-send</span></code>)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#receiver-features-lidi-receive">Receiver features (<code class="docutils literal notranslate"><span class="pre">lidi-receive</span></code>)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#client-features-lidi-clients">Client features (<code class="docutils literal notranslate"><span class="pre">lidi-clients</span></code>)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#c-bindings-features-lidi-bindings">C bindings features (<code class="docutils literal notranslate"><span class="pre">lidi-bindings</span></code>)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#internal-library-features-lidi-command-utils">Internal library features (<code class="docutils literal notranslate"><span class="pre">lidi-command-utils</span></code>)</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="parameters.html">Command line parameters</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tweaking.html">Tweaking parameters</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tc_ratelimiter.html">Rate limiting with tc</a></li>
+<li class="toctree-l1"><a class="reference internal" href="files.html">Sending files with Lidi</a></li>
+<li class="toctree-l1"><a class="reference internal" href="udp.html">Sending UDP with Lidi</a></li>
+<li class="toctree-l1"><a class="reference internal" href="oneshot.html">Oneshot Lidi</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">Lidi</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">Building lidi</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/building.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="building-lidi">
+<span id="id1"></span><h1>Building lidi<a class="headerlink" href="#building-lidi" title="Link to this heading"></a></h1>
+<section id="prerequisites">
+<h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Link to this heading"></a></h2>
+<p>The only dependency needed to build lidi from source is the Rust toolchain
+(<code class="docutils literal notranslate"><span class="pre">rustc</span></code> and <code class="docutils literal notranslate"><span class="pre">cargo</span></code>). The usual way to install it is through <a class="reference external" href="https://rustup.rs/">rustup</a>:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>$<span class="w"> </span>rustup<span class="w"> </span>install<span class="w"> </span>stable
+</pre></div>
+</div>
+<p>Some optional compilation features pull in native libraries that must be
+available on the build host, most notably <a class="reference external" href="https://www.openssl.org/">OpenSSL</a>
+for the TLS features (<code class="docutils literal notranslate"><span class="pre">from-tls</span></code> / <code class="docutils literal notranslate"><span class="pre">to-tls</span></code> / <code class="docutils literal notranslate"><span class="pre">tls</span></code>).</p>
+</section>
+<section id="building">
+<h2>Building<a class="headerlink" href="#building" title="Link to this heading"></a></h2>
+<p>Building lidi with its default features is straightforward:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>$<span class="w"> </span>cargo<span class="w"> </span>build<span class="w"> </span>--release
+</pre></div>
+</div>
+<p>The resulting binaries are placed in <code class="docutils literal notranslate"><span class="pre">target/release/</span></code>. With the default
+workspace members, this builds:</p>
+<ul class="simple">
+<li><p>the two core binaries, <code class="docutils literal notranslate"><span class="pre">lidi-send</span></code> and <code class="docutils literal notranslate"><span class="pre">lidi-receive</span></code>, and their oneshot
+variants <code class="docutils literal notranslate"><span class="pre">lidi-send-oneshot</span></code> and <code class="docutils literal notranslate"><span class="pre">lidi-receive-oneshot</span></code>;</p></li>
+<li><p>the client utilities <code class="docutils literal notranslate"><span class="pre">lidi-file-send</span></code>, <code class="docutils literal notranslate"><span class="pre">lidi-file-receive</span></code>,
+<code class="docutils literal notranslate"><span class="pre">lidi-dir-send</span></code>, <code class="docutils literal notranslate"><span class="pre">lidi-udp-send</span></code>, <code class="docutils literal notranslate"><span class="pre">lidi-udp-receive</span></code>,
+<code class="docutils literal notranslate"><span class="pre">lidi-flood-send</span></code>, <code class="docutils literal notranslate"><span class="pre">lidi-flood-receive</span></code> and <code class="docutils literal notranslate"><span class="pre">lidi-network-simulator</span></code>;</p></li>
+<li><p>the C shared library (<code class="docutils literal notranslate"><span class="pre">lidi-bindings</span></code>).</p></li>
+</ul>
+</section>
+<section id="cargo-workspace-layout">
+<h2>Cargo workspace layout<a class="headerlink" href="#cargo-workspace-layout" title="Link to this heading"></a></h2>
+<p>Lidi is a Cargo workspace made of several crates, each with its own set of
+compilation features:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">lidi-send</span></code> — the sender binaries.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">lidi-receive</span></code> — the receiver binaries.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">lidi-clients</span></code> — the file, directory and UDP-tunnel client utilities.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">lidi-bindings</span></code> — the C shared library.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">lidi-command-utils</span></code> — internal library shared by the binaries (command
+line, configuration, logging, sockets, TLS, hashing). Its features are enabled
+transitively by the crates above and normally do not need to be selected
+manually.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">lidi-protocol</span></code> — internal library implementing the on-wire protocol. It has
+no compilation feature.</p></li>
+</ul>
+</section>
+<section id="selecting-compilation-features">
+<h2>Selecting compilation features<a class="headerlink" href="#selecting-compilation-features" title="Link to this heading"></a></h2>
+<p>All features listed below are enabled by default unless stated otherwise. To
+build a crate with a custom set of features, disable the defaults and list the
+ones you want. For example, to build a minimal sender that only accepts plain
+TCP connections and only uses the <code class="docutils literal notranslate"><span class="pre">sendmmsg</span></code> UDP strategy:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>$<span class="w"> </span>cargo<span class="w"> </span>build<span class="w"> </span>--release<span class="w"> </span>-p<span class="w"> </span>lidi-send<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--no-default-features<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>--features<span class="w"> </span><span class="s2">&quot;command-line,from-tcp,heartbeat,send-mmsg&quot;</span>
+</pre></div>
+</div>
+<p>To keep the defaults and only add an opt-in feature (for instance the mimalloc
+allocator):</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>$<span class="w"> </span>cargo<span class="w"> </span>build<span class="w"> </span>--release<span class="w"> </span>-p<span class="w"> </span>lidi-send<span class="w"> </span>--features<span class="w"> </span>mimalloc
+</pre></div>
+</div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Most features gate a runtime capability. When a configured option requires a
+feature that was not compiled in, lidi either logs a warning and ignores the
+option (<code class="docutils literal notranslate"><span class="pre">hash</span></code>, <code class="docutils literal notranslate"><span class="pre">heartbeat</span></code>, <code class="docutils literal notranslate"><span class="pre">log4rs</span></code>, <code class="docutils literal notranslate"><span class="pre">prometheus</span></code>) or logs an error
+and refuses to use the corresponding endpoint (<code class="docutils literal notranslate"><span class="pre">from-*</span></code> / <code class="docutils literal notranslate"><span class="pre">to-*</span></code> /
+<code class="docutils literal notranslate"><span class="pre">tcp</span></code> / <code class="docutils literal notranslate"><span class="pre">tls</span></code> / <code class="docutils literal notranslate"><span class="pre">unix</span></code>).</p>
+</div>
+</section>
+<section id="sender-features-lidi-send">
+<h2>Sender features (<code class="docutils literal notranslate"><span class="pre">lidi-send</span></code>)<a class="headerlink" href="#sender-features-lidi-send" title="Link to this heading"></a></h2>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">command-line</span></code> <em>(default)</em> — parse command line options with <cite>clap</cite> in
+addition to the configuration file. Without this feature the binary accepts
+only a single positional configuration-file path.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">from-tcp</span></code> <em>(default)</em> — accept plain TCP client connections (<code class="docutils literal notranslate"><span class="pre">tcp:</span></code>
+source endpoints).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">from-tls</span></code> <em>(default)</em> — accept TLS client connections (<code class="docutils literal notranslate"><span class="pre">tls:</span></code> source
+endpoints). Pulls in OpenSSL.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">from-unix</span></code> <em>(default)</em> — accept Unix-domain socket client connections
+(<code class="docutils literal notranslate"><span class="pre">unix:</span></code> source endpoints).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">hash</span></code> <em>(default)</em> — support the per-endpoint <code class="docutils literal notranslate"><span class="pre">hash</span></code> option (compute a hash
+of the transferred data).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">heartbeat</span></code> <em>(default)</em> — send periodic heartbeat blocks (the <code class="docutils literal notranslate"><span class="pre">heartbeat</span></code>
+parameter).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">log4rs</span></code> <em>(default)</em> — support a <cite>log4rs</cite> YAML logging configuration file
+(<code class="docutils literal notranslate"><span class="pre">log4rs-config</span></code>).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">prometheus</span></code> <em>(default)</em> — expose Prometheus metrics (<code class="docutils literal notranslate"><span class="pre">prometheus-listen</span></code>).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">send-native</span></code> <em>(default)</em> — compile the <code class="docutils literal notranslate"><span class="pre">send</span></code> UDP strategy.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">send-msg</span></code> <em>(default)</em> — compile the <code class="docutils literal notranslate"><span class="pre">sendmsg</span></code> UDP strategy.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">send-mmsg</span></code> <em>(default)</em> — compile the <code class="docutils literal notranslate"><span class="pre">sendmmsg</span></code> UDP strategy.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">mimalloc</span></code> <em>(opt-in)</em> — use the mimalloc global allocator instead of the
+system one.</p></li>
+</ul>
+<p>At least one of <code class="docutils literal notranslate"><span class="pre">send-native</span></code>, <code class="docutils literal notranslate"><span class="pre">send-msg</span></code> or <code class="docutils literal notranslate"><span class="pre">send-mmsg</span></code> must be enabled.
+When several UDP strategies are compiled in, the default mode is <code class="docutils literal notranslate"><span class="pre">mmsg</span></code>, then
+<code class="docutils literal notranslate"><span class="pre">msg</span></code>, then <code class="docutils literal notranslate"><span class="pre">native</span></code> (see the <code class="docutils literal notranslate"><span class="pre">mode</span></code> parameter).</p>
+</section>
+<section id="receiver-features-lidi-receive">
+<h2>Receiver features (<code class="docutils literal notranslate"><span class="pre">lidi-receive</span></code>)<a class="headerlink" href="#receiver-features-lidi-receive" title="Link to this heading"></a></h2>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">command-line</span></code> <em>(default)</em> — parse command line options with <cite>clap</cite> in
+addition to the configuration file. Without this feature the binary accepts
+only a single positional configuration-file path.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">to-tcp</span></code> <em>(default)</em> — forward to plain TCP destination endpoints (<code class="docutils literal notranslate"><span class="pre">tcp:</span></code>).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">to-tls</span></code> <em>(default)</em> — forward to TLS destination endpoints (<code class="docutils literal notranslate"><span class="pre">tls:</span></code>). Pulls
+in OpenSSL.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">to-unix</span></code> <em>(default)</em> — forward to Unix-domain socket destination endpoints
+(<code class="docutils literal notranslate"><span class="pre">unix:</span></code>).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">hash</span></code> <em>(default)</em> — support the per-endpoint <code class="docutils literal notranslate"><span class="pre">hash</span></code> option (verify a hash
+of the transferred data).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">heartbeat</span></code> <em>(default)</em> — monitor incoming heartbeat blocks and warn on
+sender disconnection (the <code class="docutils literal notranslate"><span class="pre">heartbeat</span></code> parameter).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">log4rs</span></code> <em>(default)</em> — support a <cite>log4rs</cite> YAML logging configuration file
+(<code class="docutils literal notranslate"><span class="pre">log4rs-config</span></code>).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">prometheus</span></code> <em>(default)</em> — expose Prometheus metrics (<code class="docutils literal notranslate"><span class="pre">prometheus-listen</span></code>).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">receive-native</span></code> <em>(default)</em> — compile the <code class="docutils literal notranslate"><span class="pre">recv</span></code> UDP strategy.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">receive-msg</span></code> <em>(default)</em> — compile the <code class="docutils literal notranslate"><span class="pre">recvmsg</span></code> UDP strategy.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">receive-mmsg</span></code> <em>(default)</em> — compile the <code class="docutils literal notranslate"><span class="pre">recvmmsg</span></code> UDP strategy.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">mimalloc</span></code> <em>(opt-in)</em> — use the mimalloc global allocator instead of the
+system one.</p></li>
+</ul>
+<p>At least one of <code class="docutils literal notranslate"><span class="pre">receive-native</span></code>, <code class="docutils literal notranslate"><span class="pre">receive-msg</span></code> or <code class="docutils literal notranslate"><span class="pre">receive-mmsg</span></code> must be
+enabled. When several UDP strategies are compiled in, the default mode is
+<code class="docutils literal notranslate"><span class="pre">mmsg</span></code>, then <code class="docutils literal notranslate"><span class="pre">msg</span></code>, then <code class="docutils literal notranslate"><span class="pre">native</span></code> (see the <code class="docutils literal notranslate"><span class="pre">mode</span></code> parameter).</p>
+</section>
+<section id="client-features-lidi-clients">
+<h2>Client features (<code class="docutils literal notranslate"><span class="pre">lidi-clients</span></code>)<a class="headerlink" href="#client-features-lidi-clients" title="Link to this heading"></a></h2>
+<p>These features apply to the file, directory and UDP-tunnel client utilities.</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">tcp</span></code> <em>(default)</em> — connect to / listen on plain TCP (<code class="docutils literal notranslate"><span class="pre">--to-tcp</span></code> /
+<code class="docutils literal notranslate"><span class="pre">--from-tcp</span></code>).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">tls</span></code> <em>(default)</em> — connect to / listen on TLS (<code class="docutils literal notranslate"><span class="pre">--to-tls</span></code> /
+<code class="docutils literal notranslate"><span class="pre">--from-tls</span></code>). Pulls in OpenSSL.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">unix</span></code> <em>(default)</em> — connect to / listen on Unix-domain sockets
+(<code class="docutils literal notranslate"><span class="pre">--to-unix</span></code> / <code class="docutils literal notranslate"><span class="pre">--from-unix</span></code>).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">hash</span></code> <em>(default)</em> — compute (sending) or verify (receiving) file content
+hashes (<code class="docutils literal notranslate"><span class="pre">--hash</span></code>).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">inotify</span></code> <em>(default)</em> — watch directories for new files using inotify
+(<code class="docutils literal notranslate"><span class="pre">lidi-dir-send</span> <span class="pre">--watch</span></code>). Without this feature, watching falls back to
+periodically re-scanning the directory tree.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">log4rs</span></code> <em>(default)</em> — support a <cite>log4rs</cite> YAML logging configuration file
+(<code class="docutils literal notranslate"><span class="pre">--log-config</span></code>).</p></li>
+</ul>
+<p>At least one of <code class="docutils literal notranslate"><span class="pre">tcp</span></code>, <code class="docutils literal notranslate"><span class="pre">tls</span></code> or <code class="docutils literal notranslate"><span class="pre">unix</span></code> must be enabled.</p>
+</section>
+<section id="c-bindings-features-lidi-bindings">
+<h2>C bindings features (<code class="docutils literal notranslate"><span class="pre">lidi-bindings</span></code>)<a class="headerlink" href="#c-bindings-features-lidi-bindings" title="Link to this heading"></a></h2>
+<p>The C shared library exposes a subset of the file client. Its features simply
+forward to the corresponding <code class="docutils literal notranslate"><span class="pre">lidi-clients</span></code> features:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">hash</span></code> <em>(default)</em> — forwards to <code class="docutils literal notranslate"><span class="pre">lidi-clients/hash</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">inotify</span></code> <em>(default)</em> — forwards to <code class="docutils literal notranslate"><span class="pre">lidi-clients/inotify</span></code>.</p></li>
+</ul>
+</section>
+<section id="internal-library-features-lidi-command-utils">
+<h2>Internal library features (<code class="docutils literal notranslate"><span class="pre">lidi-command-utils</span></code>)<a class="headerlink" href="#internal-library-features-lidi-command-utils" title="Link to this heading"></a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">lidi-command-utils</span></code> is not built directly; the following features are enabled
+transitively by the sender, receiver and client crates and do not normally need
+to be selected by hand: <code class="docutils literal notranslate"><span class="pre">command-line</span></code> (clap), <code class="docutils literal notranslate"><span class="pre">hash</span></code> (xxHash), <code class="docutils literal notranslate"><span class="pre">log4rs</span></code>,
+<code class="docutils literal notranslate"><span class="pre">mimalloc</span></code>, <code class="docutils literal notranslate"><span class="pre">prometheus</span></code> and <code class="docutils literal notranslate"><span class="pre">tls</span></code> (OpenSSL).</p>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="gstarted.html" class="btn btn-neutral float-left" title="Getting started" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="parameters.html" class="btn btn-neutral float-right" title="Command line parameters" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2026, ANSSI-FR.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

@@ -6,14 +6,14 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Oneshot Lidi &mdash; Lidi 2.0.0 documentation</title>
-      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=80d5e7a1" />
+  <title>Oneshot Lidi &mdash; Lidi 3.0.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
 
   
       <script src="_static/jquery.js?v=5d32c60e"></script>
       <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="_static/documentation_options.js?v=51b770b3"></script>
+      <script src="_static/documentation_options.js?v=acc74ff5"></script>
       <script src="_static/doctools.js?v=fd6eb6e6"></script>
       <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
     <script src="_static/js/theme.js"></script>
@@ -44,11 +44,18 @@
               <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="gstarted.html">Getting started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="building.html">Building lidi</a></li>
 <li class="toctree-l1"><a class="reference internal" href="parameters.html">Command line parameters</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tweaking.html">Tweaking parameters</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tc_ratelimiter.html">Rate limiting with tc</a></li>
 <li class="toctree-l1"><a class="reference internal" href="files.html">Sending files with Lidi</a></li>
 <li class="toctree-l1"><a class="reference internal" href="udp.html">Sending UDP with Lidi</a></li>
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Oneshot Lidi</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Oneshot Lidi</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#endpoints">Endpoints</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#usage">Usage</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#example">Example</a></li>
+</ul>
+</li>
 </ul>
 
         </div>
@@ -76,67 +83,44 @@
            <div itemprop="articleBody">
              
   <section id="oneshot-lidi">
-<h1>Oneshot Lidi<a class="headerlink" href="#oneshot-lidi" title="Link to this heading"></a></h1>
-<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>Read stdin and send it to diode-oneshot-receive (no need for diode-send nor diode-receive).
-
-Usage: diode-oneshot-send [OPTIONS] --to &lt;ip:port&gt;
-
-Options:
-      --log-level &lt;Off|Error|Warn|Info|Debug|Trace&gt;
-          Log level [default: Info]
-      --encode-threads &lt;0..255&gt;
-          Number of parallel RaptorQ encoding threads [default: 1]
-      --flush
-          Flush client data immediately
-      --to &lt;ip:port&gt;
-          IP address and port where to send UDP packets to diode-receive
-      --to-bind &lt;ip:port&gt;
-          Binding IP for UDP traffic [default: 0.0.0.0:0]
-      --to-mtu &lt;nb_bytes&gt;
-          MTU of the output UDP link [default: 1500]
-      --batch &lt;2..1024&gt;
-          Use sendmmsg to send from 2 to 1024 UDP datagrams at once
-      --block &lt;nb_bytes&gt;
-          Size of RaptorQ block in bytes [default: 734928]
-      --repair &lt;percentage&gt;
-          Percentage of RaptorQ repair data [default: 2]
-      --cpu-affinity
-          Set CPU affinity for threads
-  -h, --help
-          Print help
+<span id="id1"></span><h1>Oneshot Lidi<a class="headerlink" href="#oneshot-lidi" title="Link to this heading"></a></h1>
+<p>The oneshot binaries, <code class="docutils literal notranslate"><span class="pre">lidi-send-oneshot</span></code> and <code class="docutils literal notranslate"><span class="pre">lidi-receive-oneshot</span></code>, are self-contained variants of the diode for transferring a single stream. <code class="docutils literal notranslate"><span class="pre">lidi-send-oneshot</span></code> reads its data from standard input and sends it directly through the UDP link, while <code class="docutils literal notranslate"><span class="pre">lidi-receive-oneshot</span></code> receives it and writes it to standard output. Unlike <code class="docutils literal notranslate"><span class="pre">lidi-send</span></code> / <code class="docutils literal notranslate"><span class="pre">lidi-receive</span></code>, they do not run TCP/TLS/Unix client listeners, so there is no need to run separate clients (nor <code class="docutils literal notranslate"><span class="pre">lidi-send</span></code> / <code class="docutils literal notranslate"><span class="pre">lidi-receive</span></code>).</p>
+<p>They accept the same configuration file and command line options as <code class="docutils literal notranslate"><span class="pre">lidi-send</span></code> / <code class="docutils literal notranslate"><span class="pre">lidi-receive</span></code> respectively (see <a class="reference internal" href="parameters.html#command-line-parameters"><span class="std std-ref">Command line parameters</span></a>), with two differences that are forced internally:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">max-clients</span></code> is always <code class="docutils literal notranslate"><span class="pre">1</span></code> (a single stream is transferred);</p></li>
+<li><p>the heartbeat is always disabled.</p></li>
+</ul>
+<p>The UDP-related parameters (<code class="docutils literal notranslate"><span class="pre">--to</span></code>, <code class="docutils literal notranslate"><span class="pre">--to-bind</span></code>, <code class="docutils literal notranslate"><span class="pre">--from</span></code>, <code class="docutils literal notranslate"><span class="pre">--ports</span></code>, <code class="docutils literal notranslate"><span class="pre">--mtu</span></code>, <code class="docutils literal notranslate"><span class="pre">--block</span></code>, <code class="docutils literal notranslate"><span class="pre">--repair</span></code>, <code class="docutils literal notranslate"><span class="pre">--mode</span></code>) behave exactly as for the regular binaries and must match on both sides.</p>
+<section id="endpoints">
+<h2>Endpoints<a class="headerlink" href="#endpoints" title="Link to this heading"></a></h2>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">lidi-send-oneshot</span></code> always reads from standard input, so no source endpoint (<code class="docutils literal notranslate"><span class="pre">--from</span></code>) is needed.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">lidi-receive-oneshot</span></code> always writes to standard output, but it still requires exactly one destination endpoint (<code class="docutils literal notranslate"><span class="pre">--to</span></code>) to be declared. The endpoint is only used so that the incoming transfer is recognized as valid; its declared address is never actually connected to, so any placeholder value works.</p></li>
+</ul>
+</section>
+<section id="usage">
+<h2>Usage<a class="headerlink" href="#usage" title="Link to this heading"></a></h2>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>lidi-send-oneshot    [OPTIONS] [config_file_path]
+lidi-receive-oneshot [OPTIONS] [config_file_path]
 </pre></div>
 </div>
-<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>Receive data from diode-oneshot-send and write them to stdout (no need for diode-send nor diode-receive).
+</section>
+<section id="example">
+<h2>Example<a class="headerlink" href="#example" title="Link to this heading"></a></h2>
+<p>Transferring a file over a loopback diode, from stdin to stdout, using UDP port 6000:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Receiver: writes what it receives to result.bin.</span>
+<span class="c1"># The --to endpoint is a mandatory placeholder; output always goes to stdout.</span>
+$<span class="w"> </span>lidi-receive-oneshot<span class="w"> </span>--from<span class="w"> </span><span class="m">127</span>.0.0.1<span class="w"> </span>--ports<span class="w"> </span><span class="m">6000</span><span class="w"> </span>--to<span class="w"> </span>tcp:127.0.0.1:9999<span class="w"> </span>&gt;<span class="w"> </span>result.bin
 
-Usage: diode-oneshot-receive [OPTIONS] --from &lt;ip:port&gt;
-
-Options:
-      --log-level &lt;Off|Error|Warn|Info|Debug|Trace&gt;
-          Log level [default: Info]
-      --from &lt;ip:port&gt;
-          IP address and port where to receive UDP packets from diode-send
-      --from-mtu &lt;nb_bytes&gt;
-          MTU of the input UDP link [default: 1500]
-      --batch &lt;2..1024&gt;
-          Use recvmmsg to receive from 2 to 1024 UDP datagrams at once
-      --reset-timeout &lt;seconds&gt;
-          Reset diode if no data are received after duration [default: 2]
-      --decode-threads &lt;0..255&gt;
-          Number of parallel RaptorQ decode threads [default: 1]
-      --flush
-          Flush immediately data to clients
-      --abort-timeout &lt;seconds&gt;
-          Abort connections if no data received after duration (0 = no abort)
-      --block &lt;nb_bytes&gt;
-          Size of RaptorQ block in bytes [default: 734928]
-      --repair &lt;percentage&gt;
-          Percentage of RaptorQ repair data [default: 2]
-      --cpu-affinity
-          Set CPU affinity for threads
-  -h, --help
-          Print help
+<span class="c1"># Sender: reads source.bin from stdin</span>
+$<span class="w"> </span>lidi-send-oneshot<span class="w"> </span>--to<span class="w"> </span><span class="m">127</span>.0.0.1<span class="w"> </span>--ports<span class="w"> </span><span class="m">6000</span><span class="w"> </span>&lt;<span class="w"> </span>source.bin
 </pre></div>
 </div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>Since a oneshot transfer is a single stream that terminates when stdin reaches end-of-file, the end of the input closes the transfer and flushes the last (possibly partial) RaptorQ block, so no <code class="docutils literal notranslate"><span class="pre">flush</span></code> option is required.</p>
+</div>
+</section>
 </section>
 
 

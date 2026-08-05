@@ -28,9 +28,11 @@ Read the :ref:`Tweaking parameters` section for details.
    :caption: Contents:
 
    gstarted
+   building
    parameters
    tweaking
-   files 
+   tc_ratelimiter
+   files
    udp
    oneshot
 

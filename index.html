@@ -6,14 +6,14 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Welcome to Lidi’s documentation! &mdash; Lidi 2.0.0 documentation</title>
-      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=80d5e7a1" />
+  <title>Welcome to Lidi’s documentation! &mdash; Lidi 3.0.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
 
   
       <script src="_static/jquery.js?v=5d32c60e"></script>
       <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="_static/documentation_options.js?v=51b770b3"></script>
+      <script src="_static/documentation_options.js?v=acc74ff5"></script>
       <script src="_static/doctools.js?v=fd6eb6e6"></script>
       <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
     <script src="_static/js/theme.js"></script>
@@ -44,8 +44,10 @@
               <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="gstarted.html">Getting started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="building.html">Building lidi</a></li>
 <li class="toctree-l1"><a class="reference internal" href="parameters.html">Command line parameters</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tweaking.html">Tweaking parameters</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tc_ratelimiter.html">Rate limiting with tc</a></li>
 <li class="toctree-l1"><a class="reference internal" href="files.html">Sending files with Lidi</a></li>
 <li class="toctree-l1"><a class="reference internal" href="udp.html">Sending UDP with Lidi</a></li>
 <li class="toctree-l1"><a class="reference internal" href="oneshot.html">Oneshot Lidi</a></li>
@@ -98,22 +100,65 @@ Read the <a class="reference internal" href="tweaking.html#tweaking-parameters">
 <li class="toctree-l1"><a class="reference internal" href="gstarted.html">Getting started</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="gstarted.html#installation">Installation</a></li>
 <li class="toctree-l2"><a class="reference internal" href="gstarted.html#setting-up-a-simple-case">Setting up a simple case</a></li>
+<li class="toctree-l2"><a class="reference internal" href="gstarted.html#using-a-configuration-file">Using a configuration file</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="building.html">Building lidi</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="building.html#prerequisites">Prerequisites</a></li>
+<li class="toctree-l2"><a class="reference internal" href="building.html#building">Building</a></li>
+<li class="toctree-l2"><a class="reference internal" href="building.html#cargo-workspace-layout">Cargo workspace layout</a></li>
+<li class="toctree-l2"><a class="reference internal" href="building.html#selecting-compilation-features">Selecting compilation features</a></li>
+<li class="toctree-l2"><a class="reference internal" href="building.html#sender-features-lidi-send">Sender features (<code class="docutils literal notranslate"><span class="pre">lidi-send</span></code>)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="building.html#receiver-features-lidi-receive">Receiver features (<code class="docutils literal notranslate"><span class="pre">lidi-receive</span></code>)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="building.html#client-features-lidi-clients">Client features (<code class="docutils literal notranslate"><span class="pre">lidi-clients</span></code>)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="building.html#c-bindings-features-lidi-bindings">C bindings features (<code class="docutils literal notranslate"><span class="pre">lidi-bindings</span></code>)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="building.html#internal-library-features-lidi-command-utils">Internal library features (<code class="docutils literal notranslate"><span class="pre">lidi-command-utils</span></code>)</a></li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="parameters.html">Command line parameters</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="parameters.html#configuration-file-format">Configuration file format</a></li>
 <li class="toctree-l2"><a class="reference internal" href="parameters.html#overview">Overview</a></li>
-<li class="toctree-l2"><a class="reference internal" href="parameters.html#adresses-and-ports">Adresses and ports</a></li>
+<li class="toctree-l2"><a class="reference internal" href="parameters.html#endpoints-data-sources-and-destinations">Endpoints (data sources and destinations)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="parameters.html#udp-transfer">UDP transfer</a></li>
 <li class="toctree-l2"><a class="reference internal" href="parameters.html#block-and-packet-sizes">Block and packet sizes</a></li>
 <li class="toctree-l2"><a class="reference internal" href="parameters.html#multiplexing">Multiplexing</a></li>
 <li class="toctree-l2"><a class="reference internal" href="parameters.html#multithreading">Multithreading</a></li>
 <li class="toctree-l2"><a class="reference internal" href="parameters.html#timeouts">Timeouts</a></li>
+<li class="toctree-l2"><a class="reference internal" href="parameters.html#queue-sizes">Queue sizes</a></li>
 <li class="toctree-l2"><a class="reference internal" href="parameters.html#heartbeat">Heartbeat</a></li>
+<li class="toctree-l2"><a class="reference internal" href="parameters.html#logging">Logging</a></li>
+<li class="toctree-l2"><a class="reference internal" href="parameters.html#prometheus-metrics">Prometheus metrics</a></li>
+<li class="toctree-l2"><a class="reference internal" href="parameters.html#tls">TLS</a></li>
 </ul>
 </li>
 <li class="toctree-l1"><a class="reference internal" href="tweaking.html">Tweaking parameters</a></li>
-<li class="toctree-l1"><a class="reference internal" href="files.html">Sending files with Lidi</a></li>
-<li class="toctree-l1"><a class="reference internal" href="udp.html">Sending UDP with Lidi</a></li>
-<li class="toctree-l1"><a class="reference internal" href="oneshot.html">Oneshot Lidi</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tc_ratelimiter.html">Rate limiting with tc</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="tc_ratelimiter.html#why-use-tc-for-rate-limiting">Why use tc for rate limiting?</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tc_ratelimiter.html#prerequisites">Prerequisites</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tc_ratelimiter.html#basic-tc-configuration-for-lidi">Basic tc configuration for Lidi</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tc_ratelimiter.html#advanced-configuration">Advanced configuration</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tc_ratelimiter.html#monitoring-tc-rules">Monitoring tc rules</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tc_ratelimiter.html#integration-with-lidi-tests">Integration with Lidi tests</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tc_ratelimiter.html#troubleshooting">Troubleshooting</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="files.html">Sending files with Lidi</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="files.html#sending-a-file">Sending a file</a></li>
+<li class="toctree-l2"><a class="reference internal" href="files.html#sending-a-directory">Sending a directory</a></li>
+<li class="toctree-l2"><a class="reference internal" href="files.html#receiving-files">Receiving files</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="udp.html">Sending UDP with Lidi</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="udp.html#required-flush-true-configuration">Required <code class="docutils literal notranslate"><span class="pre">flush=true</span></code> configuration</a></li>
+<li class="toctree-l2"><a class="reference internal" href="udp.html#minimal-example-configuration">Minimal example configuration</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="oneshot.html">Oneshot Lidi</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="oneshot.html#endpoints">Endpoints</a></li>
+<li class="toctree-l2"><a class="reference internal" href="oneshot.html#usage">Usage</a></li>
+<li class="toctree-l2"><a class="reference internal" href="oneshot.html#example">Example</a></li>
+</ul>
+</li>
 </ul>
 </div>
 </section>

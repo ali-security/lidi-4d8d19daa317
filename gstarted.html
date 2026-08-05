@@ -6,20 +6,20 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Getting started &mdash; Lidi 2.0.0 documentation</title>
-      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=80d5e7a1" />
+  <title>Getting started &mdash; Lidi 3.0.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
 
   
       <script src="_static/jquery.js?v=5d32c60e"></script>
       <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="_static/documentation_options.js?v=51b770b3"></script>
+      <script src="_static/documentation_options.js?v=acc74ff5"></script>
       <script src="_static/doctools.js?v=fd6eb6e6"></script>
       <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
     <script src="_static/js/theme.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="Command line parameters" href="parameters.html" />
+    <link rel="next" title="Building lidi" href="building.html" />
     <link rel="prev" title="Welcome to Lidi’s documentation!" href="index.html" /> 
 </head>
 
@@ -45,19 +45,15 @@
               <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul class="current">
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Getting started</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="#installation">Installation</a><ul>
-<li class="toctree-l3"><a class="reference internal" href="#building-from-scratch">Building from scratch</a><ul>
-<li class="toctree-l4"><a class="reference internal" href="#prerequisites">Prerequisites</a></li>
-<li class="toctree-l4"><a class="reference internal" href="#building">Building</a></li>
-</ul>
-</li>
-</ul>
-</li>
+<li class="toctree-l2"><a class="reference internal" href="#installation">Installation</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#setting-up-a-simple-case">Setting up a simple case</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#using-a-configuration-file">Using a configuration file</a></li>
 </ul>
 </li>
+<li class="toctree-l1"><a class="reference internal" href="building.html">Building lidi</a></li>
 <li class="toctree-l1"><a class="reference internal" href="parameters.html">Command line parameters</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tweaking.html">Tweaking parameters</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tc_ratelimiter.html">Rate limiting with tc</a></li>
 <li class="toctree-l1"><a class="reference internal" href="files.html">Sending files with Lidi</a></li>
 <li class="toctree-l1"><a class="reference internal" href="udp.html">Sending UDP with Lidi</a></li>
 <li class="toctree-l1"><a class="reference internal" href="oneshot.html">Oneshot Lidi</a></li>
@@ -91,40 +87,24 @@
 <span id="id1"></span><h1>Getting started<a class="headerlink" href="#getting-started" title="Link to this heading"></a></h1>
 <section id="installation">
 <h2>Installation<a class="headerlink" href="#installation" title="Link to this heading"></a></h2>
-<section id="building-from-scratch">
-<h3>Building from scratch<a class="headerlink" href="#building-from-scratch" title="Link to this heading"></a></h3>
-<section id="prerequisites">
-<h4>Prerequisites<a class="headerlink" href="#prerequisites" title="Link to this heading"></a></h4>
-<p>The following dependencies are needed in order to build lidi from scratch.</p>
-<ul class="simple">
-<li><p><cite>rust</cite> and <cite>cargo</cite></p></li>
-</ul>
-<p>The usual way to install the rust toolchain is to firstly install the tool <cite>rustup</cite>.
-Once <cite>rustup</cite> is available, you can simply run:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>$<span class="w"> </span>rustup<span class="w"> </span>install<span class="w"> </span>stable
-</pre></div>
-</div>
-</section>
-<section id="building">
-<h4>Building<a class="headerlink" href="#building" title="Link to this heading"></a></h4>
-<p>Building lidi is fairly easy once you have all the dependencies set-up:</p>
+<p>Building lidi from source only requires the Rust toolchain (<code class="docutils literal notranslate"><span class="pre">rustc</span></code> and <code class="docutils literal notranslate"><span class="pre">cargo</span></code>). Once it is installed:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>$<span class="w"> </span>cargo<span class="w"> </span>build<span class="w"> </span>--release
 </pre></div>
 </div>
-<p>This step provides you with the two main binaries for lidi: the sender and the receiver part, in addition to other utility binaries, such as file sending/receiving ones.</p>
-</section>
-</section>
+<p>provides you with the two main binaries for lidi: the sender part (<code class="docutils literal notranslate"><span class="pre">lidi-send</span></code>) and the receiver part (<code class="docutils literal notranslate"><span class="pre">lidi-receive</span></code>), in addition to other utility binaries, such as file sending/receiving ones (see <a class="reference internal" href="files.html#sending-files-with-lidi"><span class="std std-ref">Sending files with Lidi</span></a>) and their oneshot variants (see <a class="reference internal" href="oneshot.html#oneshot-lidi"><span class="std std-ref">Oneshot Lidi</span></a>). Compiled binaries are placed in <code class="docutils literal notranslate"><span class="pre">target/release/</span></code>.</p>
+<p>See the <a class="reference internal" href="building.html#building-lidi"><span class="std std-ref">Building lidi</span></a> chapter for the full build instructions and the list of available compilation features.</p>
 </section>
 <section id="setting-up-a-simple-case">
 <h2>Setting up a simple case<a class="headerlink" href="#setting-up-a-simple-case" title="Link to this heading"></a></h2>
-<p>The simplest case we can set up is to have lidi sender and receiver part running on the same machine. Next, we will use <cite>netcat</cite> tool to actually send and receive data over the (software) diode link.</p>
-<p>In a first terminal, we start by running the sender part of lidi with default parameters:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>$<span class="w"> </span>cargo<span class="w"> </span>run<span class="w"> </span>--release<span class="w"> </span>--bin<span class="w"> </span>diode-send<span class="w"> </span>--<span class="w"> </span>--from-tcp<span class="w"> </span><span class="m">127</span>.0.0.1:5000<span class="w"> </span>--to<span class="w"> </span><span class="m">127</span>.0.0.1:6000
+<p>The simplest case we can set up is to have lidi sender and receiver part running on the same machine. Next, we will use the <cite>netcat</cite> tool to actually send and receive data over the (software) diode link.</p>
+<p>In this example, data enters the diode over a TCP connection on port 5000, is transferred as UDP datagrams on port 6000, and is served back over a TCP connection on port 7000.</p>
+<p>In a first terminal, we start by running the sender part of lidi:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>$<span class="w"> </span>cargo<span class="w"> </span>run<span class="w"> </span>--release<span class="w"> </span>--bin<span class="w"> </span>lidi-send<span class="w"> </span>--<span class="w"> </span>--from<span class="w"> </span>tcp:127.0.0.1:5000<span class="w"> </span>--to<span class="w"> </span><span class="m">127</span>.0.0.1<span class="w"> </span>--ports<span class="w"> </span><span class="m">6000</span>
 </pre></div>
 </div>
-<p>Some information logging should will show up, especially indicating that the diode is waiting for TCP connections on port 5000 and that the traffic will go through the diode on UDP port 6000.</p>
+<p>Some information logging should show up, especially indicating that the diode accepts TCP connections on port 5000 and that the traffic will go through the diode on UDP port 6000.</p>
 <p>Next, we run the receiving part of lidi:</p>
-<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>$<span class="w"> </span>cargo<span class="w"> </span>run<span class="w"> </span>--release<span class="w"> </span>--bin<span class="w"> </span>diode-receive<span class="w"> </span>--<span class="w"> </span>--from<span class="w"> </span><span class="m">127</span>.0.0.1:6000<span class="w"> </span>--to-tcp<span class="w"> </span><span class="m">127</span>.0.0.1:7000
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>$<span class="w"> </span>cargo<span class="w"> </span>run<span class="w"> </span>--release<span class="w"> </span>--bin<span class="w"> </span>lidi-receive<span class="w"> </span>--<span class="w"> </span>--to<span class="w"> </span>tcp:127.0.0.1:7000<span class="w"> </span>--from<span class="w"> </span><span class="m">127</span>.0.0.1<span class="w"> </span>--ports<span class="w"> </span><span class="m">6000</span>
 </pre></div>
 </div>
 <p>This time, logging will indicate that traffic will come up on UDP port 6000 and that transferred content will be served on TCP port 7000.</p>
@@ -145,6 +125,19 @@ Hello<span class="w"> </span>Lidi!
 </pre></div>
 </div>
 <p>The message should have been transferred with only forwarding UDP traffic, to finally show up in the first waiting netcat terminal window!</p>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p><code class="docutils literal notranslate"><span class="pre">lidi-send</span></code> fills a whole RaptorQ block (<code class="docutils literal notranslate"><span class="pre">--block</span></code> bytes, default 220 000) before encoding and sending it. In this example the block is flushed and sent when the <code class="docutils literal notranslate"><span class="pre">nc</span></code> client closes the connection (<code class="docutils literal notranslate"><span class="pre">Ctrl-D</span></code>), which lidi treats as an end-of-transfer marker. To forward data immediately without waiting for the connection to close (for instance for a long-lived stream), enable the <code class="docutils literal notranslate"><span class="pre">flush</span></code> option on the endpoint: <code class="docutils literal notranslate"><span class="pre">--from</span> <span class="pre">tcp[flush=true]:127.0.0.1:5000</span></code>.</p>
+</div>
+</section>
+<section id="using-a-configuration-file">
+<h2>Using a configuration file<a class="headerlink" href="#using-a-configuration-file" title="Link to this heading"></a></h2>
+<p>For anything beyond quick tests, it is more convenient to store settings in a TOML configuration file, given as the first positional argument. Command line arguments given after the configuration file override the values read from the file:</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span>$<span class="w"> </span>cargo<span class="w"> </span>run<span class="w"> </span>--release<span class="w"> </span>--bin<span class="w"> </span>lidi-send<span class="w"> </span>--<span class="w"> </span>config.toml
+$<span class="w"> </span>cargo<span class="w"> </span>run<span class="w"> </span>--release<span class="w"> </span>--bin<span class="w"> </span>lidi-send<span class="w"> </span>--<span class="w"> </span>config.toml<span class="w"> </span>--repair<span class="w"> </span><span class="m">5</span>
+</pre></div>
+</div>
+<p>Example configuration files are provided in the <code class="docutils literal notranslate"><span class="pre">config_examples/</span></code> directory of the repository. See the <a class="reference internal" href="parameters.html#command-line-parameters"><span class="std std-ref">Command line parameters</span></a> chapter for the list of available options and their configuration-file equivalents.</p>
 <p>Next steps is to review <a class="reference internal" href="parameters.html#command-line-parameters"><span class="std std-ref">Command line parameters</span></a> to adapt them to your use case, and eventually <a class="reference internal" href="tweaking.html#tweaking-parameters"><span class="std std-ref">Tweaking parameters</span></a> to achieve optimal transfer performances.</p>
 </section>
 </section>
@@ -154,7 +147,7 @@ Hello<span class="w"> </span>Lidi!
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
         <a href="index.html" class="btn btn-neutral float-left" title="Welcome to Lidi’s documentation!" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
-        <a href="parameters.html" class="btn btn-neutral float-right" title="Command line parameters" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+        <a href="building.html" class="btn btn-neutral float-right" title="Building lidi" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 
   <hr/>

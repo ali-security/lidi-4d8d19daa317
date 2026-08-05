@@ -6,21 +6,21 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Sending files with Lidi &mdash; Lidi 2.0.0 documentation</title>
-      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=80d5e7a1" />
+  <title>Sending files with Lidi &mdash; Lidi 3.0.0 documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
       <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
 
   
       <script src="_static/jquery.js?v=5d32c60e"></script>
       <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="_static/documentation_options.js?v=51b770b3"></script>
+      <script src="_static/documentation_options.js?v=acc74ff5"></script>
       <script src="_static/doctools.js?v=fd6eb6e6"></script>
       <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
     <script src="_static/js/theme.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
     <link rel="next" title="Sending UDP with Lidi" href="udp.html" />
-    <link rel="prev" title="Tweaking parameters" href="tweaking.html" /> 
+    <link rel="prev" title="Rate limiting with tc" href="tc_ratelimiter.html" /> 
 </head>
 
 <body class="wy-body-for-nav"> 
@@ -45,9 +45,16 @@
               <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="gstarted.html">Getting started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="building.html">Building lidi</a></li>
 <li class="toctree-l1"><a class="reference internal" href="parameters.html">Command line parameters</a></li>
 <li class="toctree-l1"><a class="reference internal" href="tweaking.html">Tweaking parameters</a></li>
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Sending files with Lidi</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tc_ratelimiter.html">Rate limiting with tc</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Sending files with Lidi</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#sending-a-file">Sending a file</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#sending-a-directory">Sending a directory</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#receiving-files">Receiving files</a></li>
+</ul>
+</li>
 <li class="toctree-l1"><a class="reference internal" href="udp.html">Sending UDP with Lidi</a></li>
 <li class="toctree-l1"><a class="reference internal" href="oneshot.html">Oneshot Lidi</a></li>
 </ul>
@@ -77,10 +84,14 @@
            <div itemprop="articleBody">
              
   <section id="sending-files-with-lidi">
-<h1>Sending files with Lidi<a class="headerlink" href="#sending-files-with-lidi" title="Link to this heading"></a></h1>
-<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>Send a file to diode-receive-file through lidi.
+<span id="id1"></span><h1>Sending files with Lidi<a class="headerlink" href="#sending-files-with-lidi" title="Link to this heading"></a></h1>
+<p>On top of the raw stream diode (<code class="docutils literal notranslate"><span class="pre">lidi-send</span></code> / <code class="docutils literal notranslate"><span class="pre">lidi-receive</span></code>), lidi provides dedicated clients to transfer files and directories: <code class="docutils literal notranslate"><span class="pre">lidi-file-send</span></code>, <code class="docutils literal notranslate"><span class="pre">lidi-dir-send</span></code> and <code class="docutils literal notranslate"><span class="pre">lidi-file-receive</span></code>. These clients connect to a running lidi diode over TCP, TLS or a Unix socket: <code class="docutils literal notranslate"><span class="pre">lidi-file-send</span></code> / <code class="docutils literal notranslate"><span class="pre">lidi-dir-send</span></code> connect to the <code class="docutils literal notranslate"><span class="pre">lidi-send</span></code> input endpoint, and <code class="docutils literal notranslate"><span class="pre">lidi-file-receive</span></code> accepts the connection coming out of the <code class="docutils literal notranslate"><span class="pre">lidi-receive</span></code> output endpoint.</p>
+<section id="sending-a-file">
+<h2>Sending a file<a class="headerlink" href="#sending-a-file" title="Link to this heading"></a></h2>
+<p>lidi-file-send can actually send files or directories. Sending directories with lidi-file-send instead of using lidi-dir-send is useful if you want to keep the exact structure of the directory (including empty directories), and to be able to detect the end of the transfer (with the <code class="docutils literal notranslate"><span class="pre">--tmp-dir</span></code> flag on lidi-file-receive).</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>Send a file to lidi-file-receive through lidi.
 
-Usage: diode-send-file [OPTIONS] &lt;--to-tcp &lt;ip:port&gt;|--to-unix &lt;path&gt;&gt; [FILES]...
+Usage: lidi-file-send [OPTIONS] &lt;--to-tcp &lt;ip:port&gt;|--to-tls &lt;ip:port&gt;|--to-unix &lt;path&gt;&gt; [FILES]...
 
 Arguments:
   [FILES]...  Files to send
@@ -88,21 +99,83 @@ Arguments:
 Options:
       --log-level &lt;Off|Error|Warn|Info|Debug|Trace&gt;
           Log level [default: Info]
+      --log-config &lt;path&gt;
+          Path to log4rs configuration file
       --to-tcp &lt;ip:port&gt;
-          TCP address and port to connect to diode-send
+          TCP address and port to connect to lidi-send
+      --to-tls &lt;ip:port&gt;
+          TLS address and port to connect to lidi-send
       --to-unix &lt;path&gt;
-          Path to Unix socket to connect to diode-send
+          Path to Unix socket to connect to lidi-send
       --buffer-size &lt;bytes&gt;
           Size of client internal read/write buffer [default: 4194304]
       --hash
           Compute and send the hash of file content
+      --delete
+          Delete files after sending
+      --tls-key &lt;path&gt;           Path to PEM key file
+      --tls-certificate &lt;path&gt;   Path to PEM certificate file
+      --tls-ca &lt;path&gt;            Path to PEM accepted CA file
+      --tls-min &lt;version&gt;        Minimum TLS accepted version [tls1_1, tls1_2, tls1_3]
+      --tls-method &lt;method&gt;      TLS method [mozilla_intermediate_v4, mozilla_intermediate_v5,
+                                 mozilla_modern_v4, mozilla_modern_v5]
+      --tls-ciphers &lt;ciphers&gt;    Accepted TLS ciphers
+      --tls-groups &lt;groups&gt;      Accepted TLS groups
   -h, --help
           Print help
 </pre></div>
 </div>
-<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>Receive file(s) sent by diode-send-file through lidi.
+</section>
+<section id="sending-a-directory">
+<h2>Sending a directory<a class="headerlink" href="#sending-a-directory" title="Link to this heading"></a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">lidi-dir-send</span></code> sends every file of a directory. Files are received on the other side by the same <code class="docutils literal notranslate"><span class="pre">lidi-file-receive</span></code> binary.</p>
+<p>Depending on the <code class="docutils literal notranslate"><span class="pre">--recursive</span></code> configuration, it either recurses in subdirectories to send each file one by one, or send each first-level entries (file or directory) as a whole. Sending whole directories is useful if you want to keep the exact structure of the directory (including empty directories, and file whose name matches the ignore pattern), and to be able to detect the end of the transfer (using the <code class="docutils literal notranslate"><span class="pre">--tmp-dir</span></code> flag on lidi-file-receive).</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">--watch</span></code> mode keeps lidi-dir-send running after sending the content, to watch for new files or directories. When a new file is detected, it is automatically sent. When a new directory is detected, it is either recursively watched for new files inside or sent as a directory, depending on the <code class="docutils literal notranslate"><span class="pre">--static</span></code> flag.</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>Send a directory to lidi-file-receive through lidi.
 
-Usage: diode-receive-file [OPTIONS] &lt;--from-tcp &lt;ip:port&gt;|--from-unix &lt;path&gt;&gt; [OUTPUT_DIRECTORY]
+Usage: lidi-dir-send [OPTIONS] &lt;--to-tcp &lt;ip:port&gt;|--to-tls &lt;ip:port&gt;|--to-unix &lt;path&gt;&gt; &lt;DIR&gt;
+
+Arguments:
+  &lt;DIR&gt;  Directory containing files to send
+
+Options:
+      --log-level &lt;Off|Error|Warn|Info|Debug|Trace&gt;
+          Log level [default: Info]
+      --log-config &lt;path&gt;
+          Path to log4rs configuration file
+      --to-tcp &lt;ip:port&gt;
+          TCP address and port to connect to lidi-send
+      --to-tls &lt;ip:port&gt;
+          TLS address and port to connect to lidi-send
+      --to-unix &lt;path&gt;
+          Path to Unix socket to connect to lidi-send
+      --buffer-size &lt;bytes&gt;
+          Size of client internal read/write buffer [default: 4194304]
+      --hash
+          Compute and send the hash of file content
+      --max-files &lt;max_files&gt;
+          Exits after sending max_files files [default: 0]
+      --ignore &lt;regex&gt;
+          Regex of file names to ignore
+      --recursive
+          Recurse in given directory
+      --watch
+          Watch for new files
+      --static
+          Only watch directories already created at the start. New directories will be sent instead of watched.
+      --delete
+          Delete files after sending
+      (plus the same --tls-* options as lidi-file-send)
+  -h, --help
+          Print help
+</pre></div>
+</div>
+</section>
+<section id="receiving-files">
+<h2>Receiving files<a class="headerlink" href="#receiving-files" title="Link to this heading"></a></h2>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>Receive file(s) sent by lidi-file-send through lidi.
+
+Usage: lidi-file-receive [OPTIONS] &lt;--from-tcp &lt;ip:port&gt;|--from-tls &lt;ip:port&gt;|--from-unix &lt;path&gt;&gt; [OUTPUT_DIRECTORY]
 
 Arguments:
   [OUTPUT_DIRECTORY]  Output directory [default: .]
@@ -110,25 +183,45 @@ Arguments:
 Options:
       --log-level &lt;Off|Error|Warn|Info|Debug|Trace&gt;
           Log level [default: Info]
+      --log-config &lt;path&gt;
+          Path to log4rs configuration file
       --from-tcp &lt;ip:port&gt;
-          IP address and port to accept TCP connections from diode-receive
+          IP address and port to accept TCP connections from lidi-receive
+      --from-tls &lt;ip:port&gt;
+          IP address and port to accept TLS connections from lidi-receive
       --from-unix &lt;path&gt;
-          Path of Unix socket to accept Unix connections from diode-receive
+          Path of Unix socket to accept Unix connections from lidi-receive
       --buffer-size &lt;bytes&gt;
           Size of client write buffer [default: 4194304]
       --hash
           Verify the hash of file content
+      --max-files &lt;max_files&gt;
+          Exits after receiving max_files files [default: 0]
+      --overwrite
+          Overwrite existing files
+      --tmp-dir &lt;directory&gt;
+          Directory where to store files during their transfer, before being moved to the
+          output directory. Allows to detect the end of file transfers without using
+          inotify, and to avoid having incomplete files in the output directory.
+      --chroot
+          Chroot in output directory before receiving files
+      (plus the same --tls-* options as lidi-file-send)
   -h, --help
           Print help
 </pre></div>
 </div>
+<div class="admonition note">
+<p class="admonition-title">Note</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">--hash</span></code> option (compilation feature <code class="docutils literal notranslate"><span class="pre">hash</span></code>) must be enabled on both the sending and receiving clients for hashes to be computed and verified. Likewise, the TLS options are only available when the <code class="docutils literal notranslate"><span class="pre">tls</span></code> feature is compiled in.</p>
+</div>
+</section>
 </section>
 
 
            </div>
           </div>
           <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
-        <a href="tweaking.html" class="btn btn-neutral float-left" title="Tweaking parameters" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="tc_ratelimiter.html" class="btn btn-neutral float-left" title="Rate limiting with tc" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
         <a href="udp.html" class="btn btn-neutral float-right" title="Sending UDP with Lidi" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
     </div>
 

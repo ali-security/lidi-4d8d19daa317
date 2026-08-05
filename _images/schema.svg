@@ -163,7 +163,7 @@
  14542,2462 14546,2468 14548,2472 14549,2474 14550,2475"
 	stroke="#000000" stroke-width="8px" stroke-linejoin="bevel"/>
 <!-- Text -->
-<text xml:space="preserve" x="9675" y="3525" fill="#000000" font-family="AvantGarde" font-style="italic" font-weight="normal" font-size="192" text-anchor="middle">diode-send</text>
+<text xml:space="preserve" x="9675" y="3525" fill="#000000" font-family="AvantGarde" font-style="italic" font-weight="normal" font-size="192" text-anchor="middle">lidi-send</text>
 <!-- Text -->
 <text xml:space="preserve" x="7500" y="3225" fill="#000000" font-family="AvantGarde" font-style="normal" font-weight="normal" font-size="132" text-anchor="end">client 1</text>
 <!-- Text -->
@@ -174,7 +174,7 @@
 <text xml:space="preserve" x="12600" y="2100" fill="#000000" font-family="AvantGarde" font-style="normal" font-weight="normal" font-size="168" text-anchor="middle">UDP datagrams</text>
 <!-- Text -->
 <!-- 8 -->
-<text xml:space="preserve" x="15750" y="3525" fill="#000000" font-family="AvantGarde" font-style="italic" font-weight="normal" font-size="192" text-anchor="middle">diode-receive</text>
+<text xml:space="preserve" x="15750" y="3525" fill="#000000" font-family="AvantGarde" font-style="italic" font-weight="normal" font-size="192" text-anchor="middle">lidi-receive</text>
 <!-- Text -->
 <text xml:space="preserve" x="16950" y="2850" fill="#000000" font-family="AvantGarde" font-style="normal" font-weight="normal" font-size="120" text-anchor="middle">192.168.3.1</text>
 <!-- Text -->
@@ -182,7 +182,7 @@
 <!-- Text -->
 <text xml:space="preserve" x="14550" y="2850" fill="#000000" font-family="AvantGarde" font-style="normal" font-weight="normal" font-size="120" text-anchor="middle">192.168.2.2:6000</text>
 <!-- Text -->
-<text xml:space="preserve" x="8700" y="4275" fill="#000000" font-family="AvantGarde" font-style="italic" font-weight="normal" font-size="132" text-anchor="start">--from-tcp 192.168.1.1:5000</text>
+<text xml:space="preserve" x="8700" y="4275" fill="#000000" font-family="AvantGarde" font-style="italic" font-weight="normal" font-size="132" text-anchor="start">--from tcp:192.168.1.1:5000</text>
 <!-- Text -->
 <text xml:space="preserve" x="7500" y="3750" fill="#000000" font-family="AvantGarde" font-style="normal" font-weight="normal" font-size="132" text-anchor="end">client n</text>
 <!-- Text -->
@@ -192,25 +192,25 @@
 <!-- Text -->
 <text xml:space="preserve" x="17850" y="2100" fill="#000000" font-family="AvantGarde" font-style="normal" font-weight="normal" font-size="168" text-anchor="middle">Unix/TCP connections</text>
 <!-- Text -->
-<text xml:space="preserve" x="14550" y="6075" fill="#000000" font-family="AvantGarde" font-style="italic" font-weight="normal" font-size="132" text-anchor="start">--repair 2</text>
+<text xml:space="preserve" x="14550" y="6075" fill="#000000" font-family="AvantGarde" font-style="italic" font-weight="normal" font-size="132" text-anchor="start">--repair 1</text>
 <!-- Text -->
-<text xml:space="preserve" x="14550" y="5775" fill="#000000" font-family="AvantGarde" font-style="italic" font-weight="normal" font-size="132" text-anchor="start">--block 734928</text>
+<text xml:space="preserve" x="14550" y="5775" fill="#000000" font-family="AvantGarde" font-style="italic" font-weight="normal" font-size="132" text-anchor="start">--block 220000</text>
 <!-- Text -->
-<text xml:space="preserve" x="14550" y="5475" fill="#000000" font-family="AvantGarde" font-style="italic" font-weight="normal" font-size="132" text-anchor="start">--from-mtu 9000</text>
+<text xml:space="preserve" x="14550" y="5475" fill="#000000" font-family="AvantGarde" font-style="italic" font-weight="normal" font-size="132" text-anchor="start">--mtu 9000</text>
 <!-- Text -->
-<text xml:space="preserve" x="14550" y="5175" fill="#000000" font-family="AvantGarde" font-style="italic" font-weight="normal" font-size="132" text-anchor="start">--from 192.168.2.2:6000</text>
+<text xml:space="preserve" x="14550" y="5175" fill="#000000" font-family="AvantGarde" font-style="italic" font-weight="normal" font-size="132" text-anchor="start">--from 192.168.2.2 --ports 6000</text>
 <!-- Text -->
-<text xml:space="preserve" x="8700" y="5775" fill="#000000" font-family="AvantGarde" font-style="italic" font-weight="normal" font-size="132" text-anchor="start">--block 734928</text>
+<text xml:space="preserve" x="8700" y="5775" fill="#000000" font-family="AvantGarde" font-style="italic" font-weight="normal" font-size="132" text-anchor="start">--block 220000</text>
 <!-- Text -->
-<text xml:space="preserve" x="8700" y="6075" fill="#000000" font-family="AvantGarde" font-style="italic" font-weight="normal" font-size="132" text-anchor="start">--repair 2</text>
+<text xml:space="preserve" x="8700" y="6075" fill="#000000" font-family="AvantGarde" font-style="italic" font-weight="normal" font-size="132" text-anchor="start">--repair 1</text>
 <!-- Text -->
-<text xml:space="preserve" x="8700" y="5475" fill="#000000" font-family="AvantGarde" font-style="italic" font-weight="normal" font-size="132" text-anchor="start">--to-mtu 9000</text>
+<text xml:space="preserve" x="8700" y="5475" fill="#000000" font-family="AvantGarde" font-style="italic" font-weight="normal" font-size="132" text-anchor="start">--mtu 9000</text>
 <!-- Text -->
-<text xml:space="preserve" x="8700" y="5175" fill="#000000" font-family="AvantGarde" font-style="italic" font-weight="normal" font-size="132" text-anchor="start">--to 192.168.2.2:6000</text>
+<text xml:space="preserve" x="8700" y="5175" fill="#000000" font-family="AvantGarde" font-style="italic" font-weight="normal" font-size="132" text-anchor="start">--to 192.168.2.2 --ports 6000</text>
 <!-- Text -->
 <text xml:space="preserve" x="8700" y="4575" fill="#000000" font-family="AvantGarde" font-style="italic" font-weight="normal" font-size="132" text-anchor="start">--to-bind 192.168.2.1:0</text>
 <!-- Text -->
-<text xml:space="preserve" x="14550" y="4575" fill="#000000" font-family="AvantGarde" font-style="italic" font-weight="normal" font-size="132" text-anchor="start">--to-tcp 192.168.3.2:7000</text>
+<text xml:space="preserve" x="14550" y="4575" fill="#000000" font-family="AvantGarde" font-style="italic" font-weight="normal" font-size="132" text-anchor="start">--to tcp:192.168.3.2:7000</text>
 <!-- Text -->
 <text xml:space="preserve" x="14550" y="4875" fill="#000000" font-family="AvantGarde" font-style="italic" font-weight="normal" font-size="132" text-anchor="start">--max-clients n</text>
 <!-- Text -->

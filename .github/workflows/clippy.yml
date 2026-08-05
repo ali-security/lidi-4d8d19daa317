@@ -7,6 +7,10 @@ on:
     branches: [master]
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -14,18 +18,9 @@ jobs:
   clippy-check:
     name: Run clippy
     runs-on: ubuntu-26.04
-
     steps:
       - uses: actions/checkout@v6
-
-      - name: Install system dependencies
-        run: |
-          sudo apt update
-          sudo apt full-upgrade
-          sudo apt install just
-
-      - name: Update rust
-        run: rustup update
+      - uses: ./.github/actions/setup-rust
 
       - name: Run clippy
         run: just clippy

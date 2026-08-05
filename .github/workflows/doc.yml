@@ -10,13 +10,12 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-python@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
 
       - name: Install system dependencies
-        run: |
-          sudo apt update
-          sudo apt full-upgrade
-          sudo apt install just
+        run: sudo apt-get update && sudo apt-get install -y just
 
       - name: Prepare
         run: pip install sphinx sphinx_rtd_theme

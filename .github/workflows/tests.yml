@@ -7,6 +7,10 @@ on:
     branches: [master]
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -14,21 +18,14 @@ jobs:
   test-features:
     name: Run build check for all features
     runs-on: ubuntu-26.04
-
     steps:
       - uses: actions/checkout@v6
-
-      - name: Install system dependencies
-        run: |
-          sudo apt update
-          sudo apt full-upgrade
-          sudo apt install just
-
-      - name: Update rust
-        run: rustup update
+      - uses: ./.github/actions/setup-rust
 
       - name: Install cargo hack
-        run: cargo install cargo-hack
+        run: |
+          curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
+          cargo binstall -y cargo-hack
 
       - name: Build all features
         run: just cargo-hack
@@ -36,18 +33,11 @@ jobs:
   tests:
     name: Run tests
     runs-on: ubuntu-26.04
-
     steps:
       - uses: actions/checkout@v6
-
-      - name: Install system dependencies
-        run: |
-          sudo apt update
-          sudo apt full-upgrade
-          sudo apt install python3-pip python3-virtualenv just valgrind
-
-      - name: Update rust
-        run: rustup update
+      - uses: ./.github/actions/setup-rust
+        with:
+          extra-packages: python3-pip python3-virtualenv valgrind
 
       - name: Get admin permissions for tc
         run: sudo setcap cap_net_admin+ep /usr/sbin/tc

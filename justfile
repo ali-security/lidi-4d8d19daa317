@@ -26,6 +26,9 @@ fmt:
 check:
     cargo check --all-targets --all-features
 
+check_release:
+    cargo check --release --features mimalloc
+
 # Cross-compilation smoke test for FreeBSD (`rustup target add x86_64-unknown-freebsd`).
 # `tls` is skipped: openssl-sys needs a cross-compiled OpenSSL (OPENSSL_DIR) that isn't
 # set up here. `lidi-bindings` is skipped: its `inotify` feature is Linux-only.
@@ -56,6 +59,10 @@ test:
 doc:
     sphinx-build doc doc/_build
 
+docker-build:
+    docker build --target send --tag lidi:send-tmp .
+    docker build --target receive --tag lidi:receive-tmp .
+
 cargo-hack:
     # Each crate requires at least one feature from each "OR group" to compile:
     # - lidi-send:    one of send-native/send-msg/send-mmsg, and one of from-tcp/from-tls/from-unix
@@ -73,4 +80,3 @@ cargo-hack:
     cargo hack check --feature-powerset --no-dev-deps \
         --at-least-one-of tcp,tls,unix \
         -p lidi-clients
-

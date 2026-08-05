@@ -1,7 +1,10 @@
-*
-!src
-!Cargo.toml
-!Cargo.lock
-!diode-file-bindings/src
-!diode-file-bindings/Cargo.toml
-!diode-file-bindings/Cargo.lock
+.github/
+config_examples/
+doc/
+target/
+CONTRIBUTING.md
+docker-compose.yml
+Dockerfile
+LICENSE
+README.md
+SECURITY.md

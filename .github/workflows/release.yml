@@ -13,6 +13,11 @@ on:
 env:
   CARGO_TERM_COLOR: always
 
+# The fork's default_workflow_permissions is read, so GITHUB_TOKEN cannot
+# create a release without asking for contents: write explicitly.
+permissions:
+  contents: write
+
 jobs:
   create-release:
     runs-on: ubuntu-latest
